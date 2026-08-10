@@ -1,12 +1,16 @@
 package llm
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type Role string
 
 const (
-	RoleUser      Role = "user"
-	RoleAssistant Role = "assistant"
+	RoleUser            Role = "user"
+	RoleAssistant       Role = "assistant"
+	providerHTTPTimeout      = 120 * time.Second
 )
 
 type Message struct {

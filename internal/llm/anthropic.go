@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 )
 
 type AnthropicProvider struct {
@@ -23,7 +22,7 @@ func NewAnthropicProvider(apikey, model string) *AnthropicProvider {
 	return &AnthropicProvider{
 		apiKey: apikey,
 		model:  model,
-		http:   &http.Client{Timeout: 60 * time.Second},
+		http:   &http.Client{Timeout: providerHTTPTimeout},
 	}
 }
 
