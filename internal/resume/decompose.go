@@ -1,6 +1,7 @@
 package resume
 
 import (
+	"ai-resume-tailor/internal/jsonx"
 	"ai-resume-tailor/internal/llm"
 	"context"
 	"crypto/sha256"
@@ -65,7 +66,7 @@ func (d *Decomposer) Decompose(ctx context.Context, resumeText string) ([]Item, 
 		return nil, fmt.Errorf("resume: llm call: %w", err)
 	}
 
-	jsonText := extractJSON(resp.Content)
+	jsonText := jsonx.Extract(resp.Content)
 
 	var result decodeResult
 	if err := json.Unmarshal([]byte(jsonText), &result); err != nil {
@@ -79,25 +80,6 @@ func (d *Decomposer) Decompose(ctx context.Context, resumeText string) ([]Item, 
 	d.log.Info("resume decomposed",
 		"items", len(items), "provider", resp.Provider, "model", resp.Model)
 	return items, nil
-}
-
-func extractJSON(s string) string {
-	s = strings.TrimSpace(s)
-
-	if strings.HasPrefix(s, "```") {
-		if nl := strings.IndexByte(s, '\n'); nl != -1 {
-			s = s[nl+1:]
-		}
-		s = strings.TrimSuffix(strings.TrimSpace(s), "```")
-		s = strings.TrimSpace(s)
-	}
-
-	start := strings.IndexByte(s, '{')
-	end := strings.LastIndexByte(s, '}')
-	if start != -1 && end != -1 && end > start {
-		return s[start : end+1]
-	}
-	return s
 }
 
 func (d *Decomposer) validate(raw []Item) []Item {
