@@ -1,4 +1,4 @@
-# JobTailor
+# ai-resume-tailor
 
 A resume tailoring and job application tool, written in Go.
 
@@ -14,7 +14,7 @@ invent figures you didn't. A deterministic checker enforces that last part.
 ## Why this exists
 
 General-purpose resume tools don't know your actual accomplishments or your
-standards, so auto-generated bullets tend to inflate or invent. JobTailor is
+standards, so auto-generated bullets tend to inflate or invent. ai-resume-tailor is
 built around one hard constraint: the tailored resume may only be built from
 facts already present in your stored items. Rewording and reordering are
 allowed; inventing or inflating a number is not — and that rule is enforced by
