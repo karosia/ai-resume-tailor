@@ -1,0 +1,171 @@
+package cli
+
+import (
+	"ai-resume-tailor/internal/llm"
+	"ai-resume-tailor/internal/resume"
+	"ai-resume-tailor/internal/tailor"
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"os"
+	"strings"
+	"time"
+)
+
+func runPing(log *slog.Logger) error {
+	client, err := buildClient(log)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	resp, err := client.Complete(ctx, llm.Request{
+		System:      "You are a terse assistant. Answer in one sentence.",
+		Messages:    []llm.Message{{Role: llm.RoleUser, Content: "Say hello and name yourself."}},
+		MaxTokens:   200,
+		Temperature: 0.7,
+	})
+	if err != nil {
+		return fmt.Errorf("completion failed: %w", err)
+	}
+	fmt.Printf("\n[answered by %s / %s]\n%s\n", resp.Provider, resp.Model, resp.Content)
+	return nil
+}
+
+func runDecompose(log *slog.Logger, args []string) error {
+	var path string
+	if len(args) >= 1 {
+		path = cleanPath(args[0])
+	} else {
+		path = cleanPath(promptLine("Enter path to your resume (.txt or .pdf): "))
+		if path == "" {
+			return usagef("no resume path specified")
+		}
+	}
+
+	text, err := resume.ReadResumeFile(path)
+	if err != nil {
+		return fmt.Errorf("read resume %s: %w", path, err)
+	}
+
+	client, err := buildClient(log)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	items, err := resume.NewDecomposer(client, log).Decompose(ctx, text)
+	if err != nil {
+		return fmt.Errorf("decompose %s: %w", path, err)
+	}
+
+	out, err := json.MarshalIndent(items, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal items: %w", err)
+	}
+	const outPath = "items.json"
+	if err := os.WriteFile(outPath, out, 0o644); err != nil {
+		return fmt.Errorf("write items: %w", err)
+	}
+
+	fmt.Printf("\nExtracted %d items -> %s\n\n", len(items), outPath)
+	for _, it := range items {
+		fmt.Printf("  [%s] %-11s %s\n", it.ID, it.Type, summarize(it))
+	}
+	return nil
+}
+
+func runMatch(log *slog.Logger, args []string) error {
+	if len(args) < 1 {
+		return usagef("usage: ai-resume-tailor match <jd.txt>")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	items, analyzed, _, err := analyzeAgainstItems(ctx, log, args[0])
+	if err != nil {
+		return err
+	}
+
+	res := tailor.Match(items, analyzed)
+
+	fmt.Printf("\nJD: %s", analyzed.Title)
+	if analyzed.Seniority != "" {
+		fmt.Printf("  (%s)", analyzed.Seniority)
+	}
+	fmt.Printf("\nKeyword coverage: %d%%  (%d of %d terms)\n",
+		res.CoveragePercent, len(res.CoveredTerms), len(res.CoveredTerms)+len(res.MissingTerms))
+
+	if len(res.MissingTerms) > 0 {
+		fmt.Printf("Missing terms: %s\n", strings.Join(res.MissingTerms, ", "))
+	}
+
+	fmt.Printf("\nTop matching items:\n")
+	limit := len(res.Ranked)
+	if limit > 10 {
+		limit = 10
+	}
+	for _, si := range res.Ranked[:limit] {
+		fmt.Printf("  [%s] score %d  covers: %s\n",
+			si.Item.ID, si.Score, strings.Join(si.Matched, ", "))
+	}
+	fmt.Println()
+	return nil
+}
+
+func runTailor(log *slog.Logger, args []string) error {
+	if len(args) < 1 {
+		return usagef("usage: ai-resume-tailor tailor <jd.txt>")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	items, analyzed, client, err := analyzeAgainstItems(ctx, log, args[0])
+	if err != nil {
+		return err
+	}
+
+	res, err := tailor.NewAssembler(client, log).Assemble(ctx, items, analyzed)
+	if err != nil {
+		return fmt.Errorf("assemble: %w", err)
+	}
+
+	pdfBytes, err := tailor.RenderPDF(res.Tailored, tailor.PDFOptions{
+		Name:    os.Getenv("RESUME_NAME"),
+		Contact: os.Getenv("RESUME_CONTACT"),
+	})
+	if err != nil {
+		return fmt.Errorf("render pdf: %w", err)
+	}
+	const pdfPath = "tailored.pdf"
+	if err := os.WriteFile(pdfPath, pdfBytes, 0o644); err != nil {
+		return fmt.Errorf("write pdf: %w", err)
+	}
+
+	md := tailor.Render(res.Tailored)
+	const outPath = "tailored.md"
+	if err := os.WriteFile(outPath, []byte(md), 0o644); err != nil {
+		return fmt.Errorf("write tailored resume: %w", err)
+	}
+
+	fmt.Printf("\nTailored resume for: %s -> %s, %s\n\n", analyzed.Title, outPath, pdfPath)
+	fmt.Println(md)
+
+	if len(res.Violations) == 0 {
+		fmt.Println("Verification: PASSED — no fabricated figures detected.")
+	} else {
+		fmt.Printf("Verification: %d issue(s) need your review:\n", len(res.Violations))
+		for _, v := range res.Violations {
+			fmt.Printf("  - [%s] %s\n    in: %q\n", v.ItemID, v.Reason, v.Text)
+		}
+		fmt.Println("\nThese figures could not be traced to your source items. Fix or remove them before using this resume.")
+	}
+	return nil
+}
