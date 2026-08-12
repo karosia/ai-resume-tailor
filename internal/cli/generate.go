@@ -169,3 +169,42 @@ func runTailor(log *slog.Logger, args []string) error {
 	}
 	return nil
 }
+
+func runPrep(log *slog.Logger, args []string) error {
+	if len(args) < 1 {
+		return usagef("usage: ai-resume-tailor prep <jd.txt>")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	items, analyzed, client, err := analyzeAgainstItems(ctx, log, args[0])
+	if err != nil {
+		return err
+	}
+
+	res, err := prep.NewGenerator(client, log).Generate(ctx, items, analyzed)
+	if err != nil {
+		return fmt.Errorf("generate prep: %w", err)
+	}
+
+	md := prep.Render(res.Prep)
+	const outPath = "interview_prep.md"
+	if err := os.WriteFile(outPath, []byte(md), 0o644); err != nil {
+		return fmt.Errorf("write prep: %w", err)
+	}
+
+	fmt.Printf("\nInterview prep for: %s -> %s\n\n", analyzed.Title, outPath)
+	fmt.Println(md)
+
+	if len(res.Warnings) == 0 {
+		fmt.Println("Grounding: PASSED — every answer draws on items you actually have.")
+	} else {
+		fmt.Printf("Grounding: %d answer(s) need your review:\n", len(res.Warnings))
+		for _, w := range res.Warnings {
+			fmt.Printf("  - %s\n    (%s: %s)\n", w.Question, w.ItemID, w.Reason)
+		}
+		fmt.Println("\nThese answers reference experience not in your items. Rework or drop them before the interview.")
+	}
+	return nil
+}

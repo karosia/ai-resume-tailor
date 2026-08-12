@@ -55,6 +55,8 @@ func Run(args []string) error {
 		return runStatus(args[1:])
 	case "note":
 		return runNote(args[1:])
+	case "prep":
+		return runPrep(log, args[1:])
 	default:
 		return &UsageError{Msg: "unknown command: " + args[0] + "\n\n" + usageText()}
 	}
