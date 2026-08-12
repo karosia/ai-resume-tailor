@@ -1,123 +1,117 @@
-# AI Resume Tailor
+# JobTailor
 
-A resume tailoring and job application tracking tool, written in Go.
+A resume tailoring and job application tool, written in Go.
 
-Point it at your resume and a job description, and it assembles a tailored
-resume from your **verified** experience — recombining, rephrasing, and
-re-emphasizing facts you've already recorded, without inventing metrics or
-claims. It also tracks where you've applied and helps you prepare for
-interviews.
+Give it your resume and a job description. It breaks your resume into verified,
+reusable items, matches them against the job, and assembles a tailored resume —
+recombining and re-emphasizing facts you've actually recorded, and refusing to
+invent figures you didn't. A deterministic checker enforces that last part.
 
-> **Status: early development.** The LLM provider layer (Milestone 1) is
-> complete and tested. See the [roadmap](#roadmap) for what exists today and
-> what's coming.
+> **Status: in development.** The core pipeline (resume → items → match →
+> tailored resume with a fabrication check, output as Markdown and PDF) works
+> end to end. Application tracking and interview prep are on the [roadmap](#roadmap).
 
 ## Why this exists
 
-General-purpose job trackers don't know your actual accomplishments or your
-standards, so auto-generated bullet points tend to inflate or invent. ai-resume-tailor
-is built around one hard constraint: the resume assembler may only work from
-facts that already exist in your stored resume items. Rewording and reordering
-are allowed; fabricating a number or an experience is not. That guardrail is the
-core design principle the rest of the project is built to enforce.
+General-purpose resume tools don't know your actual accomplishments or your
+standards, so auto-generated bullets tend to inflate or invent. JobTailor is
+built around one hard constraint: the tailored resume may only be built from
+facts already present in your stored items. Rewording and reordering are
+allowed; inventing or inflating a number is not — and that rule is enforced by
+code, not just by asking the model nicely.
 
-## What's implemented today (Milestone 1)
+## What it does today
 
-A provider-agnostic LLM client with automatic failover:
+- **Provider-agnostic LLM client with failover.** One `Provider` interface;
+  ships with Anthropic (primary) and OpenAI (fallback). Add a backend by
+  implementing two methods.
+- **Resume decomposition.** Reads a `.txt` or `.pdf` resume and extracts it into
+  structured, reusable items (roles, achievements, skills, education, projects)
+  via structured LLM output. Content-addressed IDs make re-runs idempotent.
+- **JD analysis + matching.** Analyzes a job description into required skills and
+  keywords, then scores your items against it deterministically (no LLM, no
+  fabrication risk), reporting honest keyword coverage and which terms are missing.
+- **Guardrailed tailoring.** Assembles a tailored resume from your items, then a
+  deterministic verifier checks every figure in the output against its source
+  item. If a number can't be traced to a source, it's flagged; the model gets one
+  self-correction attempt with the specific violations before anything is shown.
+- **Markdown + PDF output.** Renders a clean, single-column, ATS-friendly PDF
+  alongside a Markdown version.
 
-- A single `Provider` interface — add a new backend by implementing two methods.
-- Ships with an **Anthropic** provider (primary) and an **OpenAI** provider
-  (fallback).
-- Ordered failover: providers are tried in priority order; the first success is
-  returned, and if every provider fails the errors are aggregated into one.
-- No third-party dependencies — standard library only.
+### An honest note on the "coverage" number and the checker
 
-## Architecture
-
-The guiding rule: nothing outside `internal/llm` imports a specific provider.
-The rest of the application depends only on the `Provider` interface and the
-`Client`. Adding a provider is one new file plus one line of registration —
-no other code changes.
-
-```
-ai-resume-tailor/
-├── main.go                  # wires providers from env, runs a demo call
-└── internal/
-    └── llm/
-        ├── llm.go           # Provider interface + provider-agnostic types
-        ├── client.go        # ordered failover chain
-        ├── anthropic.go     # Anthropic Messages API provider
-        ├── openai.go        # OpenAI Chat Completions provider
-        └── client_test.go   # failover tests (no network required)
-```
-
-Each provider translates the shared, provider-agnostic `Request` into its own
-wire format, so per-provider quirks (for example, how a system prompt is passed)
-stay contained inside that provider's file and never leak into the rest of the
-app.
+The keyword coverage percentage is *literal* keyword coverage — the share of the
+job's terms your items cover. It is **not** a prediction of any real ATS system's
+score; those are proprietary and unknowable. Likewise, the verifier catches the
+highest-risk, most detectable class of fabrication — **numbers and figures that
+aren't in the source** — but it does not catch purely qualitative embellishment.
+That's left to the prompt and to your own review.
 
 ## Requirements
 
-- Go 1.21 or newer (uses `log/slog`).
+- Go 1.24 or newer (matches the `go` directive in `go.mod`).
+- At least one API key: `ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY`.
+
+> Note: the latest version of `github.com/ledongthuc/pdf` requires Go 1.24+. This
+> project pins an earlier, Go 1.22-compatible version. Bump it if you're on a
+> newer toolchain.
 
 ## Getting started
 
 ```bash
-# Run the failover tests — no API keys required.
+git clone https://github.com/karosia/ai-resume-tailor.git
+cd ai-resume-tailor
+go mod tidy
+
+# Run the test suite — no API keys required.
 go test ./...
 
-# Make a real call.
+# Configure providers and (optionally) your PDF header.
 export ANTHROPIC_API_KEY=sk-ant-...
-export OPENAI_API_KEY=sk-...        # optional; enables fallback
-go run .
+export OPENAI_API_KEY=sk-...                      # optional; enables fallback
+export RESUME_NAME="Your Name"
+export RESUME_CONTACT="City · you@example.com · github.com/you"
 ```
+
+## Usage
+
+```bash
+# 1. Break your resume into reusable items -> items.json
+#    Accepts .txt or .pdf; if you omit the path, it asks for one.
+go run . decompose ~/Documents/resume.pdf
+
+# 2. See how your items line up against a job posting.
+go run . match jd.txt
+
+# 3. Assemble a tailored resume -> tailored.md and tailored.pdf,
+#    with a fabrication check reported at the end.
+go run . tailor jd.txt
+```
+
+| Command                          | What it does                                                        |
+| -------------------------------- | ------------------------------------------------------------------- |
+| `ping`                           | Verify the LLM provider chain works                                 |
+| `decompose [resume.txt\|.pdf]`   | Extract structured items (prompts for a path if omitted)            |
+| `match <jd.txt>`                 | Match stored items against a job description, report coverage       |
+| `tailor <jd.txt>`                | Assemble a tailored resume (Markdown + PDF) with a fabrication check |
 
 ### Configuration
 
-Configuration is read from environment variables:
+| Variable            | Required | Default            | Purpose                            |
+| ------------------- | -------- | ------------------ | ---------------------------------- |
+| `ANTHROPIC_API_KEY` | yes\*    | —                  | Enables the Anthropic provider     |
+| `ANTHROPIC_MODEL`   | no       | `claude-sonnet-5`  | Override the Anthropic model       |
+| `OPENAI_API_KEY`    | no       | —                  | Enables the OpenAI fallback        |
+| `OPENAI_MODEL`      | no       | `gpt-4o`           | Override the OpenAI model           |
+| `RESUME_NAME`       | no       | —                  | Name printed in the PDF header      |
+| `RESUME_CONTACT`    | no       | —                  | Contact line printed in the PDF     |
 
-| Variable            | Required | Default            | Purpose                          |
-| ------------------- | -------- | ------------------ | -------------------------------- |
-| `ANTHROPIC_API_KEY` | yes\*    | —                  | Enables the Anthropic provider   |
-| `ANTHROPIC_MODEL`   | no       | `claude-sonnet-5`  | Override the Anthropic model     |
-| `OPENAI_API_KEY`    | no       | —                  | Enables the OpenAI fallback      |
-| `OPENAI_MODEL`      | no       | `gpt-4o`           | Override the OpenAI model         |
+\* At least one provider key must be set. Primary/fallback order follows
+registration order in `main.go` (Anthropic first, OpenAI second).
 
-\* At least one provider key must be set. The primary/fallback order is
-determined by the order providers are registered in `main.go` (Anthropic first,
-OpenAI second).
+## Architecture
 
-## Adding a provider
-
-Implement the `Provider` interface in a new file under `internal/llm/`:
-
-```go
-type Provider interface {
-    Name() string
-    Complete(ctx context.Context, req Request) (*Response, error)
-}
-```
-
-Then register it in `main.go`:
-
-```go
-if url := os.Getenv("OLLAMA_URL"); url != "" {
-    providers = append(providers, llm.NewOllamaProvider(url, "llama3"))
-}
-```
-
-Nothing else needs to change. The failover `Client` and all downstream features
-work against the interface, not any concrete provider.
-
-## Roadmap
-
-- [x] **M1** — LLM provider abstraction + ordered failover
-- [ ] **M2** — Resume decomposition into structured, reusable items
-- [ ] **M3** — JD analysis, item matching, and guardrailed tailored-resume generation
-- [ ] **M4** — Application tracking (status, dates, history) backed by SQLite
-- [ ] **M5** — Interview prep: expected questions + answer examples grounded in stored items
-- [ ] **M6** — Web UI to tie it together
-
-## License
-
-Personal project. Choose and add a license (e.g. MIT) before sharing or reuse.
+Nothing outside `internal/llm` imports a specific provider — the rest of the app
+depends only on the `Provider` interface. LLM steps produce structured JSON;
+matching and verification are deterministic and LLM-free, so the guardrail can't
+itself hallucinate.
