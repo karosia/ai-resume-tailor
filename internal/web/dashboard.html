@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>JobTailor — Pipeline</title>
+    <style>
+        :root {
+            --ink: #171b23;
+            --muted: #69707d;
+            --faint: #969ca7;
+            --paper: #eceff3;
+            --surface: #ffffff;
+            --hairline: #e1e5ea;
+
+            /* the only color story: pipeline status */
+            --s-draft:        #7a8497;
+            --s-applied:      #2563c9;
+            --s-interviewing: #b26a00;
+            --s-offer:        #0f8a52;
+            --s-accepted:     #0a6b3d;
+            --s-rejected:     #b23b3b;
+            --s-withdrawn:    #8a8f98;
+
+            --sans: -apple-system, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, monospace;
+        }
+
+        [data-status="draft"]        { --sc: var(--s-draft); }
+        [data-status="applied"]      { --sc: var(--s-applied); }
+        [data-status="interviewing"] { --sc: var(--s-interviewing); }
+        [data-status="offer"]        { --sc: var(--s-offer); }
+        [data-status="accepted"]     { --sc: var(--s-accepted); }
+        [data-status="rejected"]     { --sc: var(--s-rejected); }
+        [data-status="withdrawn"]    { --sc: var(--s-withdrawn); }
+
+        * { box-sizing: border-box; }
+        html { -webkit-text-size-adjust: 100%; }
+        body {
+            margin: 0;
+            background: var(--paper);
+            color: var(--ink);
+            font-family: var(--sans);
+            font-size: 15px;
+            line-height: 1.45;
+        }
+        .shell { max-width: 960px; margin: 0 auto; padding: 40px 24px 80px; }
+
+        /* masthead */
+        .masthead { display: flex; align-items: baseline; gap: 14px; margin-bottom: 4px; }
+        .brand { display: flex; align-items: center; gap: 8px; }
+        .brand-mark { color: var(--ink); font-size: 13px; transform: translateY(-1px); }
+        .brand-name { font-weight: 650; letter-spacing: -0.01em; font-size: 20px; }
+        .tagline {
+            margin: 0; color: var(--faint);
+            font-family: var(--mono); font-size: 11px;
+            text-transform: uppercase; letter-spacing: 0.14em;
+        }
+
+        /* pipeline rail — the signature: documents the true state order */
+        .rail {
+            list-style: none; margin: 22px 0 30px; padding: 14px 18px;
+            display: flex; flex-wrap: wrap; gap: 22px;
+            background: var(--surface); border: 1px solid var(--hairline); border-radius: 10px;
+        }
+        .rail-stage {
+            display: flex; align-items: center; gap: 8px; position: relative;
+            font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+            text-transform: uppercase; color: var(--muted);
+        }
+        .rail-stage .dot {
+            width: 9px; height: 9px; border-radius: 50%;
+            background: var(--sc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--sc) 16%, white);
+        }
+        .rail-stage:not(:last-child)::after {
+            content: ""; width: 22px; height: 1px; margin-left: 4px;
+            background: var(--hairline);
+        }
+
+        /* add form */
+        .add {
+            display: flex; gap: 10px; margin-bottom: 26px; flex-wrap: wrap;
+        }
+        .add input {
+            flex: 1 1 180px; min-width: 0;
+            padding: 10px 12px; border: 1px solid var(--hairline); border-radius: 8px;
+            background: var(--surface); color: var(--ink); font: inherit;
+        }
+        .add input:focus-visible, .note-form input:focus-visible, select:focus-visible {
+            outline: 2px solid var(--s-applied); outline-offset: 1px; border-color: transparent;
+        }
+        .add button {
+            padding: 10px 18px; border: 0; border-radius: 8px;
+            background: var(--ink); color: #fff; font: inherit; font-weight: 550;
+            cursor: pointer; letter-spacing: 0.01em;
+        }
+        .add button:hover { background: #000; }
+
+        /* board */
+        .board-wrap { overflow-x: auto; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); }
+        table.board { width: 100%; border-collapse: collapse; min-width: 720px; }
+        .board th {
+            text-align: left; padding: 12px 14px;
+            font-family: var(--mono); font-size: 10px; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.12em; color: var(--faint);
+            border-bottom: 1px solid var(--hairline);
+        }
+        .board td { padding: 14px; border-bottom: 1px solid var(--hairline); vertical-align: middle; }
+        .board tbody tr:last-child td { border-bottom: 0; }
+        .board tbody tr:hover { background: #f7f9fb; }
+
+        /* the status spine: each row carries its pipeline color on the left edge */
+        tr[data-status] td:first-child { box-shadow: inset 3px 0 var(--sc); }
+
+        .mono { font-family: var(--mono); }
+        .muted { color: var(--muted); }
+        td.id { font-family: var(--mono); color: var(--faint); font-size: 13px; }
+
+        .who { display: flex; flex-direction: column; gap: 1px; }
+        .who .company { font-weight: 600; }
+        .who .role { color: var(--muted); font-size: 13px; }
+
+        /* status cell: pill + inline change control */
+        .status-form { display: flex; align-items: center; gap: 8px; }
+        .pill {
+            font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em;
+            text-transform: uppercase; padding: 4px 9px; border-radius: 999px;
+            color: var(--sc);
+            background: color-mix(in srgb, var(--sc) 12%, white);
+            border: 1px solid color-mix(in srgb, var(--sc) 32%, white);
+            white-space: nowrap;
+        }
+        select {
+            font: inherit; font-size: 13px; color: var(--muted);
+            padding: 5px 8px; border: 1px solid var(--hairline); border-radius: 7px;
+            background: var(--surface); cursor: pointer;
+        }
+
+        .note-form { display: flex; gap: 6px; align-items: center; }
+        .note-form input {
+            flex: 1; min-width: 120px;
+            padding: 7px 10px; border: 1px solid var(--hairline); border-radius: 7px;
+            background: var(--surface); color: var(--ink); font: inherit; font-size: 13px;
+        }
+        .note-form .ghost {
+            padding: 7px 11px; border: 1px solid var(--hairline); border-radius: 7px;
+            background: transparent; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer;
+        }
+        .note-form .ghost:hover { color: var(--ink); border-color: var(--muted); }
+
+        /* empty state: an invitation, not a mood */
+        .empty {
+            padding: 48px 24px; text-align: center; color: var(--muted);
+            border: 1px dashed var(--hairline); border-radius: 12px; background: var(--surface);
+        }
+
+        @media (prefers-reduced-motion: no-preference) {
+            .board tbody tr { transition: background 120ms ease; }
+        }
+        @media (max-width: 560px) {
+            .shell { padding: 28px 16px 60px; }
+            .masthead { flex-direction: column; gap: 2px; }
+        }
+    </style>
+</head>
+<body>
+<div class="shell">
+    <header class="masthead">
+        <div class="brand"><span class="brand-mark">&#9670;</span><span class="brand-name">JobTailor</span></div>
+        <p class="tagline">Application pipeline</p>
+    </header>
+
+    <ol class="rail">
+        {{range .Pipeline}}<li class="rail-stage" data-status="{{.}}"><span class="dot"></span>{{.}}</li>{{end}}
+    </ol>
+
+    <form class="add" method="post" action="/apps">
+        <input name="company" placeholder="Company" autocomplete="off" required>
+        <input name="role" placeholder="Role" autocomplete="off" required>
+        <button type="submit">Track application</button>
+    </form>
+
+    {{if .Apps}}
+    <div class="board-wrap">
+        <table class="board">
+            <thead>
+            <tr>
+                <th>#</th><th>Company / Role</th><th>Status</th>
+                <th>Applied</th><th>Updated</th><th>Notes</th>
+            </tr>
+            </thead>
+            <tbody>
+            {{range .Apps}}
+            <tr data-status="{{.Status}}">
+                <td class="id">{{.ID}}</td>
+                <td>
+                    <div class="who"><span class="company">{{.Company}}</span><span class="role">{{.Role}}</span></div>
+                </td>
+                <td>
+                    {{$cur := .Status}}
+                    <form method="post" action="/apps/{{.ID}}/status" class="status-form">
+                        <span class="pill" data-status="{{.Status}}">{{.Status}}</span>
+                        <select name="status" onchange="this.form.submit()" aria-label="Change status for {{.Company}}">
+                            {{range $.Statuses}}<option value="{{.}}"{{if eq . $cur}} selected{{end}}>{{.}}</option>{{end}}
+                        </select>
+                    </form>
+                </td>
+                <td class="mono muted">{{.Applied}}</td>
+                <td class="mono muted">{{.Updated}}</td>
+                <td>
+                    <form method="post" action="/apps/{{.ID}}/note" class="note-form">
+                        <input name="note" value="{{.Notes}}" placeholder="Add a note&hellip;" aria-label="Note">
+                        <button type="submit" class="ghost">Save</button>
+                    </form>
+                </td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+    </div>
+    {{else}}
+    <div class="empty">No applications yet. Add your first one above to start tracking.</div>
+    {{end}}
+</div>
+</body>
+</html>
