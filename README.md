@@ -6,11 +6,12 @@ Give it your resume and a job description. It breaks your resume into verified,
 reusable items, matches them against the job, assembles a tailored resume, tracks
 your applications, and drafts interview prep — recombining and re-emphasizing
 facts you've actually recorded, and refusing to invent the ones you didn't.
-Deterministic checkers enforce that last part.
+Deterministic checkers enforce that last part. A local web dashboard ties it all
+together.
 
-> **Status: core pipeline complete.** Resume → items → match → tailored resume
-> (Markdown + PDF) → application tracking → interview prep all work end to end.
-> A web UI is the remaining item on the [roadmap](#roadmap).
+> **Status: complete.** The full pipeline — resume → items → match → tailored
+> resume (Markdown + PDF) → application tracking → interview prep — works from the
+> command line and from a local web UI.
 
 ## Why this exists
 
@@ -21,7 +22,7 @@ be built from facts already present in your stored items. Rewording and
 reordering are allowed; inventing or inflating a fact is not — and that rule is
 enforced by code, not just by asking the model nicely.
 
-## What it does today
+## What it does
 
 - **Provider-agnostic LLM client with failover.** One `Provider` interface;
   ships with Anthropic (primary) and OpenAI (fallback). Add a backend by
@@ -45,6 +46,10 @@ enforced by code, not just by asking the model nicely.
   check flags any answer that references experience you don't have. When the role
   needs a skill your items don't show, answers bridge honestly from adjacent
   experience rather than claiming something you lack.
+- **Web dashboard.** A local, server-rendered UI: a pipeline board for the
+  tracker, and a Generate page that runs tailoring and interview prep as
+  background jobs (the slow LLM calls happen off the request, with a job page that
+  polls until the result is ready).
 
 ### An honest note on the "coverage" number and the checkers
 
@@ -80,6 +85,8 @@ export RESUME_CONTACT="City · you@example.com · github.com/you"
 
 ## Usage
 
+### Command line
+
 ```bash
 # 1. Break your resume into reusable items -> items.json
 #    Accepts .txt or .pdf; if you omit the path, it asks for one.
@@ -95,11 +102,20 @@ go run . tailor jd.txt
 go run . prep jd.txt
 
 # 5. Track the application and update it as things progress.
-go run . track "Company" "Senior Backend Engineer"
+go run . track "Acme" "Senior Backend Engineer"
 go run . apps
 go run . status 1 applied
 go run . note 1 "referred by a friend"
 ```
+
+### Web dashboard
+
+```bash
+go run . serve            # http://127.0.0.1:8080
+```
+
+The **Pipeline** tab is the tracker; the **Generate** tab takes a pasted job
+description and runs tailoring or interview prep as a background job.
 
 | Command                          | What it does                                                        |
 | -------------------------------- | ------------------------------------------------------------------- |
@@ -112,6 +128,7 @@ go run . note 1 "referred by a friend"
 | `apps`                           | List all tracked applications                                       |
 | `status <id> <status>`           | Update an application's status                                      |
 | `note <id> <text...>`            | Set an application's notes                                          |
+| `serve [addr]`                   | Launch the web dashboard (default `127.0.0.1:8080`)                 |
 
 Statuses: `draft`, `applied`, `interviewing`, `offer`, `accepted`, `rejected`, `withdrawn`.
 
@@ -136,4 +153,5 @@ codes. Everything else lives in focused `internal` packages. Nothing outside
 `internal/llm` imports a specific provider — the rest of the app depends only on
 the `Provider` interface. LLM steps produce structured JSON; matching and
 verification are deterministic and LLM-free, so the guardrails can't themselves
-hallucinate.
+hallucinate. The web layer depends only on a small `Runner` interface, so it
+never imports the LLM packages directly.

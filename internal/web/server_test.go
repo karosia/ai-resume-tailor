@@ -1,15 +1,26 @@
 package web
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"ai-resume-tailor/internal/store"
 )
+
+// fakeRunner stands in for the real LLM-backed runner. tailorErr/prepErr let a
+// test force a failure; otherwise the funcs return a canned result immediately.
+type fakeRunner struct {
+	result string
+}
+
+func (f fakeRunner) Tailor(ctx context.Context, jd string) (string, error) { return f.result, nil }
+func (f fakeRunner) Prep(ctx context.Context, jd string) (string, error)   { return f.result, nil }
 
 func newTestServer(t *testing.T) (*Server, http.Handler) {
 	t.Helper()
@@ -19,7 +30,7 @@ func newTestServer(t *testing.T) (*Server, http.Handler) {
 	}
 	t.Cleanup(func() { st.Close() })
 
-	srv, err := NewServer(st, nil)
+	srv, err := NewServer(st, fakeRunner{result: "RENDERED OUTPUT"}, nil)
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -113,6 +124,74 @@ func TestSetStatus_BadIDRejected(t *testing.T) {
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for non-numeric id, got %d", rr.Code)
+	}
+}
+
+func TestGeneratePage_Renders(t *testing.T) {
+	_, h := newTestServer(t)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest("GET", "/generate", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "Tailor") {
+		t.Fatal("generate page missing tailor action")
+	}
+}
+
+func TestGenerateSubmit_CreatesJobAndCompletes(t *testing.T) {
+	_, h := newTestServer(t)
+
+	form := url.Values{"jd": {"Senior Go Engineer\nBuild distributed systems"}, "action": {"tailor"}}
+	req := httptest.NewRequest("POST", "/generate", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	// Should redirect to the new job's page.
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d", rr.Code)
+	}
+	loc := rr.Header().Get("Location")
+	if !strings.HasPrefix(loc, "/jobs/") {
+		t.Fatalf("expected redirect to /jobs/..., got %q", loc)
+	}
+
+	// Poll the job page until the background job finishes.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		jr := httptest.NewRecorder()
+		h.ServeHTTP(jr, httptest.NewRequest("GET", loc, nil))
+		if jr.Code != http.StatusOK {
+			t.Fatalf("job page status %d", jr.Code)
+		}
+		if strings.Contains(jr.Body.String(), "RENDERED OUTPUT") {
+			return // done — result rendered
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("job did not complete / render its result in time")
+}
+
+func TestGenerateSubmit_EmptyJDRejected(t *testing.T) {
+	_, h := newTestServer(t)
+	form := url.Values{"jd": {"   "}, "action": {"tailor"}}
+	req := httptest.NewRequest("POST", "/generate", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for empty JD, got %d", rr.Code)
+	}
+}
+
+func TestJobPage_UnknownIDNotFound(t *testing.T) {
+	_, h := newTestServer(t)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest("GET", "/jobs/deadbeef", nil))
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rr.Code)
 	}
 }
 

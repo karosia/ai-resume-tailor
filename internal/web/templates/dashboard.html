@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ai-resume-tailor — Pipeline</title>
+    {{template "styles" .}}
+</head>
+<body>
+<div class="shell">
+    {{template "nav" .}}
+
+    <ol class="rail">
+        {{range .Data.Pipeline}}<li class="rail-stage" data-status="{{.}}"><span class="dot"></span>{{.}}</li>{{end}}
+    </ol>
+
+    <form class="add" method="post" action="/apps">
+        <input name="company" placeholder="Company" autocomplete="off" required>
+        <input name="role" placeholder="Role" autocomplete="off" required>
+        <button type="submit" class="btn">Track application</button>
+    </form>
+
+    {{if .Data.Apps}}
+    <div class="board-wrap">
+        <table class="board">
+            <thead>
+            <tr><th>#</th><th>Company / Role</th><th>Status</th><th>Applied</th><th>Updated</th><th>Notes</th></tr>
+            </thead>
+            <tbody>
+            {{range .Data.Apps}}
+            <tr data-status="{{.Status}}">
+                <td class="id">{{.ID}}</td>
+                <td><div class="who"><span class="company">{{.Company}}</span><span class="role">{{.Role}}</span></div></td>
+                <td>
+                    {{$cur := .Status}}
+                    <form method="post" action="/apps/{{.ID}}/status" class="status-form">
+                        <span class="pill" data-status="{{.Status}}">{{.Status}}</span>
+                        <select name="status" onchange="this.form.submit()" aria-label="Change status for {{.Company}}">
+                            {{range $.Data.Statuses}}<option value="{{.}}"{{if eq . $cur}} selected{{end}}>{{.}}</option>{{end}}
+                        </select>
+                    </form>
+                </td>
+                <td class="mono muted">{{.Applied}}</td>
+                <td class="mono muted">{{.Updated}}</td>
+                <td>
+                    <form method="post" action="/apps/{{.ID}}/note" class="note-form">
+                        <input name="note" value="{{.Notes}}" placeholder="Add a note&hellip;" aria-label="Note">
+                        <button type="submit" class="ghost">Save</button>
+                    </form>
+                </td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+    </div>
+    {{else}}
+    <div class="empty">No applications yet. Add your first one above to start tracking.</div>
+    {{end}}
+</div>
+</body>
+</html>

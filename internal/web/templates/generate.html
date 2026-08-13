@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ai-resume-tailor — Generate</title>
+    {{template "styles" .}}
+</head>
+<body>
+<div class="shell">
+    {{template "nav" .}}
+
+    <div class="panel">
+        <p class="lead">Paste a job description. ai-resume-tailor builds from your stored items only &mdash; it won't invent experience you don't have.</p>
+        <form method="post" action="/generate">
+            <textarea name="jd" placeholder="Paste the full job description here&hellip;" required></textarea>
+            <div class="actions">
+                <button type="submit" name="action" value="tailor" class="btn">Tailor résumé</button>
+                <button type="submit" name="action" value="prep" class="btn secondary">Interview prep</button>
+            </div>
+        </form>
+    </div>
+
+    {{if .Data.Jobs}}
+    <div class="jobs-recent">
+        <h2>Recent</h2>
+        {{range .Data.Jobs}}
+        <div class="job-row">
+            <span class="kindtag" data-kind="{{.Kind}}">{{.Kind}}</span>
+            <span class="job-label">{{.Label}}</span>
+            <span class="jobstatus" data-jobstatus="{{.Status}}">{{.Status}}</span>
+            <a href="/jobs/{{.ID}}">view</a>
+        </div>
+        {{end}}
+    </div>
+    {{end}}
+</div>
+</body>
+</html>

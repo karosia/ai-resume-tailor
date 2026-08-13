@@ -22,7 +22,7 @@ func runServe(log *slog.Logger, args []string) error {
 	}
 	defer st.Close()
 
-	srv, err := web.NewServer(st, log)
+	srv, err := web.NewServer(st, llmRunner{log: log}, log)
 	if err != nil {
 		return err
 	}

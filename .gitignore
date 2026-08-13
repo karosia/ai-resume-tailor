@@ -32,3 +32,10 @@ go.work.sum
 .vscode/
 
 .DS_Store
+
+# personal data
+items.json
+tailored.md
+tailored.pdf
+interview_prep.md
+jobtailor.db
