@@ -12,7 +12,7 @@ import (
 
 func runTrack(args []string) error {
 	if len(args) < 2 {
-		return usagef(`usage: jobtailor track "<company>" "<role>"`)
+		return usagef(`usage: ai-resume-tailor track "<company>" "<role>"`)
 	}
 	st, err := openStore()
 	if err != nil {
@@ -41,7 +41,7 @@ func runApps() error {
 		return err
 	}
 	if len(apps) == 0 {
-		fmt.Println(`No applications tracked yet. Add one with:  jobtailor track "Company" "Role"`)
+		fmt.Println(`No applications tracked yet. Add one with:  ai-resume-tailor track "Company" "Role"`)
 		return nil
 	}
 
@@ -61,7 +61,7 @@ func runApps() error {
 
 func runStatus(args []string) error {
 	if len(args) < 2 {
-		return usagef("usage: jobtailor status <id> <status>  (statuses: %s)", statusList())
+		return usagef("usage: ai-resume-tailor status <id> <status>  (statuses: %s)", statusList())
 	}
 	id, err := strconv.ParseInt(args[0], 10, 64)
 	if err != nil {
@@ -83,7 +83,7 @@ func runStatus(args []string) error {
 
 func runNote(args []string) error {
 	if len(args) < 2 {
-		return usagef("usage: jobtailor note <id> <text...>")
+		return usagef("usage: ai-resume-tailor note <id> <text...>")
 	}
 	id, err := strconv.ParseInt(args[0], 10, 64)
 	if err != nil {

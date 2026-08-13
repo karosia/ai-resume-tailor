@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	"jobtailor/internal/store"
+	"ai-resume-tailor/internal/store"
 )
 
 //go:embed templates/*.html

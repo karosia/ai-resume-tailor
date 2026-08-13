@@ -27,7 +27,7 @@ func runServe(log *slog.Logger, args []string) error {
 		return err
 	}
 
-	fmt.Printf("JobTailor dashboard: http://%s\n", addr)
+	fmt.Printf("ai-resume-tailor dashboard: http://%s\n", addr)
 	fmt.Println("Press Ctrl+C to stop.")
 	if err := http.ListenAndServe(addr, srv.Handler()); err != nil {
 		return fmt.Errorf("serve: %w", err)

@@ -72,10 +72,13 @@ Usage:
   ai-resume-tailor decompose [resume.txt|.pdf]  extract structured items (asks for a path if omitted)
   ai-resume-tailor match <jd.txt>               match stored items against a job description
   ai-resume-tailor tailor <jd.txt>              assemble a tailored resume (with fabrication check)
+  ai-resume-tailor prep <jd.txt>                generate interview prep grounded in your items
+
   ai-resume-tailor track "<company>" "<role>"   start tracking a new application
   ai-resume-tailor apps                         list all tracked applications
   ai-resume-tailor status <id> <status>         update an application's status
-  ai-resume-tailor note <id> <text...>          set an application's notes`
+  ai-resume-tailor note <id> <text...>          set an application's notes
+  ai-resume-tailor serve [addr]                 launch the tracking dashboard (default 127.0.0.1:8080)`
 }
 
 // --- shared helpers ---
