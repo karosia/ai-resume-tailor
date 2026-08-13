@@ -2,6 +2,7 @@ package cli
 
 import (
 	"ai-resume-tailor/internal/llm"
+	"ai-resume-tailor/internal/prep"
 	"ai-resume-tailor/internal/resume"
 	"ai-resume-tailor/internal/tailor"
 	"context"

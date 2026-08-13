@@ -33,11 +33,14 @@ type anthropicMessage struct {
 	Content string `json:"content"`
 }
 type anthropicReqBody struct {
-	Model       string             `json:"model"`
-	MaxTokens   int                `json:"max_tokens"`
-	System      string             `json:"system,omitempty"`
-	Temperature float64            `json:"temperature"`
-	Messages    []anthropicMessage `json:"messages"`
+	Model     string `json:"model"`
+	MaxTokens int    `json:"max_tokens"`
+	System    string `json:"system,omitempty"`
+	// Temperature/top_p/top_k intentionally omitted: Claude Opus 4.7+ and
+	// Sonnet 5 reject non-default sampling parameters with a 400. Anthropic's
+	// guidance is to control behavior through the system prompt instead.
+	//Temperature float64            `json:"temperature"`
+	Messages []anthropicMessage `json:"messages"`
 }
 
 type anthropicRespBody struct {
@@ -58,10 +61,10 @@ func (p *AnthropicProvider) Complete(ctx context.Context, req Request) (*Respons
 	}
 
 	body := anthropicReqBody{
-		Model:       p.model,
-		MaxTokens:   req.MaxTokens,
-		System:      req.System,
-		Temperature: req.Temperature,
+		Model:     p.model,
+		MaxTokens: req.MaxTokens,
+		System:    req.System,
+		//Temperature: req.Temperature,
 	}
 	for _, m := range req.Messages {
 		body.Messages = append(body.Messages, anthropicMessage{
@@ -81,7 +84,7 @@ func (p *AnthropicProvider) Complete(ctx context.Context, req Request) (*Respons
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("x-api-key", p.apiKey)
-	httpReq.Header.Set("anthropic-version", "2023-06-1")
+	httpReq.Header.Set("anthropic-version", "2023-06-01")
 
 	resp, err := p.http.Do(httpReq)
 	if err != nil {
