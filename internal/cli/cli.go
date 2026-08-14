@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"ai-resume-tailor/internal/tailor"
 	"ai-resume-tailor/jobsource"
 	"bufio"
 	"context"
@@ -216,4 +217,15 @@ func jdArgOrPrompt(args []string) (string, error) {
 		return args[0], nil
 	}
 	return promptJD()
+}
+
+func resumeHeader() tailor.Header {
+	return tailor.Header{
+		Name:     os.Getenv("RESUME_NAME"),
+		Email:    os.Getenv("RESUME_EMAIL"),
+		Phone:    os.Getenv("RESUME_PHONE"),
+		Location: os.Getenv("RESUME_LOCATION"),
+		LinkedIn: os.Getenv("RESUME_LINKEDIN"),
+		GitHub:   os.Getenv("RESUME_GITHUB"),
+	}
 }

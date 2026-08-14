@@ -31,7 +31,7 @@ func (r llmRunner) Tailor(ctx context.Context, jdText string) (string, error) {
 		return "", fmt.Errorf("assemble: %w", err)
 	}
 
-	out := tailor.Render(res.Tailored)
+	out := tailor.Render(res.Tailored, items, resumeHeader())
 	if len(res.Violations) > 0 {
 		out += "\n\n----------\nVERIFICATION — " + strconv.Itoa(len(res.Violations)) + " issue(s) need your review:\n"
 		for _, v := range res.Violations {

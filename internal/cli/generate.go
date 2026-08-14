@@ -141,10 +141,9 @@ func runTailor(log *slog.Logger, args []string) error {
 		return fmt.Errorf("assemble: %w", err)
 	}
 
-	pdfBytes, err := tailor.RenderPDF(res.Tailored, tailor.PDFOptions{
-		Name:    os.Getenv("RESUME_NAME"),
-		Contact: os.Getenv("RESUME_CONTACT"),
-	})
+	header := resumeHeader()
+
+	pdfBytes, err := tailor.RenderPDF(res.Tailored, items, header)
 	if err != nil {
 		return fmt.Errorf("render pdf: %w", err)
 	}
@@ -153,7 +152,8 @@ func runTailor(log *slog.Logger, args []string) error {
 		return fmt.Errorf("write pdf: %w", err)
 	}
 
-	md := tailor.Render(res.Tailored)
+	md := tailor.Render(res.Tailored, items, header)
+
 	const outPath = "tailored.md"
 	if err := os.WriteFile(outPath, []byte(md), 0o644); err != nil {
 		return fmt.Errorf("write tailored resume: %w", err)

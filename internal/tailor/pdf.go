@@ -5,20 +5,16 @@ import (
 	"fmt"
 
 	"github.com/go-pdf/fpdf"
-)
 
-// PDFOptions controls the header of the rendered resume. These are facts about
-// the candidate (name, contact line) that live outside the tailored items, so
-// the caller supplies them explicitly rather than the model inventing them.
-type PDFOptions struct {
-	Name    string // e.g. "Jayce Park"
-	Contact string // e.g. "Vancouver, BC · you@example.com · github.com/you"
-}
+	"ai-resume-tailor/internal/resume"
+)
 
 // RenderPDF lays out a tailored resume as a single-column A4 PDF and returns the
 // file bytes. Layout constants are chosen for a clean, ATS-friendly document:
 // standard fonts, generous margins, no columns or graphics that parsers choke on.
-func RenderPDF(t *Tailored, opts PDFOptions) ([]byte, error) {
+// Experience is grouped by company (deterministically, from items); the header
+// facts come from h, outside the model's reach.
+func RenderPDF(t *Tailored, items []resume.Item, h Header) ([]byte, error) {
 	const (
 		marginL = 18.0
 		marginR = 18.0
@@ -38,15 +34,15 @@ func RenderPDF(t *Tailored, opts PDFOptions) ([]byte, error) {
 	pageW, _ := pdf.GetPageSize()
 	textW := pageW - marginL - marginR
 
-	// --- Header ---
-	if opts.Name != "" {
+	// --- Header: name + contact line ---
+	if h.Name != "" {
 		pdf.SetFont("Helvetica", "B", 20)
-		pdf.CellFormat(textW, 9, tr(opts.Name), "", 1, "L", false, 0, "")
+		pdf.CellFormat(textW, 9, tr(h.Name), "", 1, "L", false, 0, "")
 	}
-	if opts.Contact != "" {
+	if cl := h.contactLine(); cl != "" {
 		pdf.SetFont("Helvetica", "", 9.5)
 		pdf.SetTextColor(90, 90, 90)
-		pdf.MultiCell(textW, 5, tr(opts.Contact), "", "L", false)
+		pdf.MultiCell(textW, 5, tr(cl), "", "L", false)
 		pdf.SetTextColor(0, 0, 0)
 	}
 
@@ -57,19 +53,49 @@ func RenderPDF(t *Tailored, opts PDFOptions) ([]byte, error) {
 		pdf.MultiCell(textW, 5, tr(t.Summary), "", "L", false)
 	}
 
-	// --- Sections ---
-	for _, s := range t.Sections {
+	g := groupByCompany(t, items)
+
+	sectionHeading := func(title string) {
 		pdf.Ln(3)
 		pdf.SetFont("Helvetica", "B", 12)
-		pdf.CellFormat(textW, 7, tr(s.Heading), "", 1, "L", false, 0, "")
+		pdf.CellFormat(textW, 7, tr(title), "", 1, "L", false, 0, "")
 		y := pdf.GetY()
 		pdf.SetDrawColor(180, 180, 180)
 		pdf.Line(marginL, y, pageW-marginR, y)
 		pdf.Ln(1.5)
+	}
 
+	// --- Professional Experience (company-grouped) ---
+	if len(g.Experience) > 0 {
+		sectionHeading("Professional Experience")
+		for _, e := range g.Experience {
+			pdf.Ln(1)
+			// Company — Role on the left, date range right-aligned on the same row.
+			pdf.SetFont("Helvetica", "B", 10.5)
+			left := e.Company
+			if e.Role != "" {
+				left += " — " + e.Role
+			}
+			dr := dateRange(e.Start, e.End)
+			pdf.CellFormat(textW*0.68, 6, tr(left), "", 0, "L", false, 0, "")
+			pdf.SetFont("Helvetica", "I", 9)
+			pdf.SetTextColor(90, 90, 90)
+			pdf.CellFormat(textW*0.32, 6, tr(dr), "", 1, "R", false, 0, "")
+			pdf.SetTextColor(0, 0, 0)
+
+			pdf.SetFont("Helvetica", "", 10)
+			for _, b := range e.Bullets {
+				drawBullet(pdf, tr, marginL, textW, b)
+			}
+		}
+	}
+
+	// --- Other sections (skills, etc.) ---
+	for _, s := range g.Other {
+		sectionHeading(s.Heading)
 		pdf.SetFont("Helvetica", "", 10)
 		for _, b := range s.Bullets {
-			drawBullet(pdf, tr, marginL, textW, b.Text)
+			drawBullet(pdf, tr, marginL, textW, b)
 		}
 	}
 
