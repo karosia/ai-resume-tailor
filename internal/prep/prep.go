@@ -102,11 +102,16 @@ func (g *Generator) Generate(ctx context.Context, items []resume.Item, j *jd.JD)
 	resp, err := g.llm.Complete(ctx, llm.Request{
 		System:      prepSystemPrompt,
 		Messages:    []llm.Message{{Role: llm.RoleUser, Content: "Job and verified items:\n" + string(raw)}},
-		MaxTokens:   4096,
+		MaxTokens:   8192,
 		Temperature: 0.4,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("prep: llm call: %w", err)
+	}
+
+	if resp.Truncated() {
+		return nil, fmt.Errorf("prep: the model's response was cut off at the token limit — " +
+			"raise MaxTokens in prep.go and try again")
 	}
 
 	var p Prep

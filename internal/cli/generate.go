@@ -1,10 +1,6 @@
 package cli
 
 import (
-	"ai-resume-tailor/internal/llm"
-	"ai-resume-tailor/internal/prep"
-	"ai-resume-tailor/internal/resume"
-	"ai-resume-tailor/internal/tailor"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,6 +8,11 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"ai-resume-tailor/internal/llm"
+	"ai-resume-tailor/internal/prep"
+	"ai-resume-tailor/internal/resume"
+	"ai-resume-tailor/internal/tailor"
 )
 
 func runPing(log *slog.Logger) error {
@@ -43,7 +44,7 @@ func runDecompose(log *slog.Logger, args []string) error {
 	} else {
 		path = cleanPath(promptLine("Enter path to your resume (.txt or .pdf): "))
 		if path == "" {
-			return usagef("no resume path specified")
+			return usagef("no resume path provided")
 		}
 	}
 
@@ -62,7 +63,7 @@ func runDecompose(log *slog.Logger, args []string) error {
 
 	items, err := resume.NewDecomposer(client, log).Decompose(ctx, text)
 	if err != nil {
-		return fmt.Errorf("decompose %s: %w", path, err)
+		return fmt.Errorf("decompose: %w", err)
 	}
 
 	out, err := json.MarshalIndent(items, "", "  ")
@@ -82,14 +83,15 @@ func runDecompose(log *slog.Logger, args []string) error {
 }
 
 func runMatch(log *slog.Logger, args []string) error {
-	if len(args) < 1 {
-		return usagef("usage: ai-resume-tailor match <jd.txt>")
+	jdArg, err := jdArgOrPrompt(args)
+	if err != nil {
+		return err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
-	items, analyzed, _, err := analyzeAgainstItems(ctx, log, args[0])
+	items, analyzed, _, err := analyzeAgainstItems(ctx, log, jdArg)
 	if err != nil {
 		return err
 	}
@@ -121,14 +123,15 @@ func runMatch(log *slog.Logger, args []string) error {
 }
 
 func runTailor(log *slog.Logger, args []string) error {
-	if len(args) < 1 {
-		return usagef("usage: ai-resume-tailor tailor <jd.txt>")
+	jdArg, err := jdArgOrPrompt(args)
+	if err != nil {
+		return err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	items, analyzed, client, err := analyzeAgainstItems(ctx, log, args[0])
+	items, analyzed, client, err := analyzeAgainstItems(ctx, log, jdArg)
 	if err != nil {
 		return err
 	}
@@ -172,14 +175,15 @@ func runTailor(log *slog.Logger, args []string) error {
 }
 
 func runPrep(log *slog.Logger, args []string) error {
-	if len(args) < 1 {
-		return usagef("usage: ai-resume-tailor prep <jd.txt>")
+	jdArg, err := jdArgOrPrompt(args)
+	if err != nil {
+		return err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	items, analyzed, client, err := analyzeAgainstItems(ctx, log, args[0])
+	items, analyzed, client, err := analyzeAgainstItems(ctx, log, jdArg)
 	if err != nil {
 		return err
 	}

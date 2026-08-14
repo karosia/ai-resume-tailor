@@ -9,6 +9,12 @@ import (
 	"net/http"
 )
 
+// OpenAIProvider calls the OpenAI Chat Completions API.
+// Docs: https://platform.openai.com/docs/api-reference/chat
+//
+// Notice this file implements the SAME Provider interface as anthropic.go.
+// The Client doesn't care which one it's talking to — that's the payoff of
+// coding against the interface.
 type OpenAIProvider struct {
 	apiKey string
 	model  string
@@ -17,21 +23,17 @@ type OpenAIProvider struct {
 
 func NewOpenAIProvider(apiKey, model string) *OpenAIProvider {
 	if model == "" {
-		model = "gpt-5.5"
+		model = "gpt-4o"
 	}
 	return &OpenAIProvider{
 		apiKey: apiKey,
 		model:  model,
-		http:   &http.Client{Timeout: providerHTTPTimeout},
+		// Safety net only — the request's context is the real deadline.
+		http: &http.Client{Timeout: providerHTTPTimeout},
 	}
 }
 
 func (p *OpenAIProvider) Name() string { return "openai" }
-
-type openaiMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
 
 type openaiReqBody struct {
 	Model       string          `json:"model"`
@@ -40,9 +42,15 @@ type openaiReqBody struct {
 	Messages    []openaiMessage `json:"messages"`
 }
 
+type openaiMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
 type openaiRespBody struct {
 	Choices []struct {
-		Message struct {
+		FinishReason string `json:"finish_reason"`
+		Message      struct {
 			Content string `json:"content"`
 		} `json:"message"`
 	} `json:"choices"`
@@ -54,10 +62,12 @@ type openaiRespBody struct {
 
 func (p *OpenAIProvider) Complete(ctx context.Context, req Request) (*Response, error) {
 	if p.apiKey == "" {
-		return nil, fmt.Errorf("openai: missing api key")
+		return nil, fmt.Errorf("openai: missing API key")
 	}
 
 	// OpenAI has no separate "system" field — it's a message with role=system,
+	// placed first. This is exactly the kind of per-provider quirk the
+	// interface lets us hide from the rest of the app.
 	var msgs []openaiMessage
 	if req.System != "" {
 		msgs = append(msgs, openaiMessage{Role: "system", Content: req.System})
@@ -78,12 +88,13 @@ func (p *OpenAIProvider) Complete(ctx context.Context, req Request) (*Response, 
 		return nil, fmt.Errorf("openai: marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.openai.com/v1/chat/completions", bytes.NewReader(raw))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		"https://api.openai.com/v1/chat/completions", bytes.NewReader(raw))
 	if err != nil {
 		return nil, fmt.Errorf("openai: build request: %w", err)
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("authorization", fmt.Sprintf("Bearer %s", p.apiKey))
+	httpReq.Header.Set("content-type", "application/json")
+	httpReq.Header.Set("authorization", "Bearer "+p.apiKey)
 
 	resp, err := p.http.Do(httpReq)
 	if err != nil {
@@ -95,6 +106,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, req Request) (*Response, 
 	if err != nil {
 		return nil, fmt.Errorf("openai: read body: %w", err)
 	}
+
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("openai: status %d: %s", resp.StatusCode, data)
 	}
@@ -111,8 +123,9 @@ func (p *OpenAIProvider) Complete(ctx context.Context, req Request) (*Response, 
 	}
 
 	return &Response{
-		Content:  out.Choices[0].Message.Content,
-		Provider: p.Name(),
-		Model:    out.Model,
+		Content:    out.Choices[0].Message.Content,
+		Provider:   p.Name(),
+		Model:      out.Model,
+		StopReason: out.Choices[0].FinishReason,
 	}, nil
 }

@@ -128,11 +128,16 @@ func (a *Assembler) generate(ctx context.Context, userMsg string) (*Tailored, er
 	resp, err := a.llm.Complete(ctx, llm.Request{
 		System:      assembleSystemPrompt,
 		Messages:    []llm.Message{{Role: llm.RoleUser, Content: userMsg}},
-		MaxTokens:   4096,
+		MaxTokens:   8192,
 		Temperature: 0.3, // a little room to rephrase, still grounded
 	})
 	if err != nil {
 		return nil, fmt.Errorf("tailor: llm call: %w", err)
+	}
+
+	if resp.Truncated() {
+		return nil, fmt.Errorf("tailor: the model's response was cut off at the token limit — " +
+			"you may have many items. Raise MaxTokens in assemble.go and try again")
 	}
 
 	var t Tailored

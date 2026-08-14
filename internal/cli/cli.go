@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"ai-resume-tailor/jobsource"
 	"bufio"
 	"context"
 	"encoding/json"
@@ -113,22 +114,26 @@ func loadItems(path string) ([]resume.Item, error) {
 	return items, nil
 }
 
-// analyzeAgainstItems performs the setup shared by `match` and `tailor`: load
-// the stored items, read the JD file, build the LLM client, and analyze the JD.
-func analyzeAgainstItems(ctx context.Context, log *slog.Logger, jdPath string) ([]resume.Item, *jd.JD, *llm.Client, error) {
+// analyzeAgainstItems performs the setup shared by `match`, `tailor`, and
+// `prep`: load the stored items, build the client, resolve the JD (from a URL,
+// a file, or raw text), and analyze it.
+func analyzeAgainstItems(ctx context.Context, log *slog.Logger, jdArg string) ([]resume.Item, *jd.JD, *llm.Client, error) {
 	items, err := loadItems("items.json")
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("could not load items.json — run `ai-resume-tailor decompose` first: %w", err)
-	}
-	jdData, err := os.ReadFile(jdPath)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("read jd %s: %w", jdPath, err)
+		return nil, nil, nil, fmt.Errorf("could not load items.json — run `jobtailor decompose` first: %w", err)
 	}
 	client, err := buildClient(log)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	analyzed, err := jd.NewAnalyzer(client, log).Analyze(ctx, string(jdData))
+
+	// jdArg may be a URL, a file path, or the JD text itself.
+	jdText, err := jobsource.NewResolver(client, log).Resolve(ctx, jdArg)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("resolve jd: %w", err)
+	}
+
+	analyzed, err := jd.NewAnalyzer(client, log).Analyze(ctx, jdText)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("analyze jd: %w", err)
 	}
@@ -164,4 +169,51 @@ func summarize(it resume.Item) string {
 		s = s[:67] + "..."
 	}
 	return s
+}
+
+// promptJD reads a multi-line job description pasted into the terminal. A JD
+// spans many paragraphs, so it can't end on the first newline; instead input
+// ends on two consecutive blank lines (press Enter on an empty line twice).
+// Single blank lines inside the JD are preserved as paragraph breaks. We use a
+// bufio.Reader (not Scanner) so a very long single line can't overflow the
+// scanner's token limit.
+func promptJD() (string, error) {
+	fmt.Println("Paste the job description below.")
+	fmt.Println("When you're done, leave a blank line (press Enter twice) to finish:")
+	fmt.Println("----------------------------------------------------------------")
+
+	reader := bufio.NewReader(os.Stdin)
+	var lines []string
+	blanks := 0
+	for {
+		line, err := reader.ReadString('\n')
+		trimmed := strings.TrimRight(line, "\r\n")
+
+		if trimmed == "" {
+			blanks++
+		} else {
+			blanks = 0
+		}
+		lines = append(lines, trimmed)
+
+		if blanks >= 2 || err != nil { // two blank lines, or EOF/piped input
+			break
+		}
+	}
+
+	text := strings.TrimSpace(strings.Join(lines, "\n"))
+	if text == "" {
+		return "", usagef("no job description was provided")
+	}
+	return text, nil
+}
+
+// jdArgOrPrompt returns the JD source: the CLI argument if given (a URL, file,
+// or text), or — when omitted — prompts the user to paste the JD directly. This
+// lets `match`/`tailor`/`prep` run with no argument at all.
+func jdArgOrPrompt(args []string) (string, error) {
+	if len(args) >= 1 && strings.TrimSpace(args[0]) != "" {
+		return args[0], nil
+	}
+	return promptJD()
 }

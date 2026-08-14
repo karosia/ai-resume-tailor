@@ -2,7 +2,10 @@
 // responses, which often arrive wrapped in markdown fences or stray prose.
 package jsonx
 
-import "strings"
+import (
+	"encoding/json"
+	"strings"
+)
 
 // Extract pulls the JSON payload out of a model response. Models sometimes wrap
 // JSON in ```json fences or add a sentence around it; this strips both. If no
@@ -27,4 +30,8 @@ func Extract(s string) string {
 		return s[start : end+1]
 	}
 	return s
+}
+
+func ExtractInto(s string, v any) error {
+	return json.Unmarshal([]byte(Extract(s)), v)
 }

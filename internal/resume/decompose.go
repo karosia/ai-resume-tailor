@@ -59,11 +59,16 @@ func (d *Decomposer) Decompose(ctx context.Context, resumeText string) ([]Item, 
 		Messages: []llm.Message{
 			{Role: llm.RoleUser, Content: resumeText},
 		},
-		MaxTokens:   4096,
+		MaxTokens:   8192,
 		Temperature: 0.1, //we want faithful extraction, not creativity
 	})
 	if err != nil {
 		return nil, fmt.Errorf("resume: llm call: %w", err)
+	}
+
+	if resp.Truncated() {
+		return nil, fmt.Errorf("resume: the model's response was cut off at the token limit — " +
+			"your resume may be long. Raise MaxTokens in decompose.go and try again")
 	}
 
 	jsonText := jsonx.Extract(resp.Content)
