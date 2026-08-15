@@ -259,20 +259,3 @@ func Verify(t *Tailored, items []resume.Item) []Violation {
 	}
 	return vs
 }
-
-// Render turns a tailored resume into readable markdown.
-func Render(t *Tailored) string {
-	var b strings.Builder
-	if t.Summary != "" {
-		b.WriteString(t.Summary)
-		b.WriteString("\n\n")
-	}
-	for _, s := range t.Sections {
-		fmt.Fprintf(&b, "## %s\n", s.Heading)
-		for _, bl := range s.Bullets {
-			fmt.Fprintf(&b, "- %s\n", bl.Text)
-		}
-		b.WriteString("\n")
-	}
-	return b.String()
-}

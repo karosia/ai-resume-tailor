@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"ai-resume-tailor/internal/jd"
+	"ai-resume-tailor/internal/jobsource"
 	"ai-resume-tailor/internal/llm"
 	"ai-resume-tailor/internal/prep"
 	"ai-resume-tailor/internal/resume"
@@ -30,6 +31,9 @@ func (r llmRunner) Tailor(ctx context.Context, jdText string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("assemble: %w", err)
 	}
+
+	// Track this as a draft application, capturing the JD text, just like the CLI.
+	saveDraftApplication(r.log, analyzed, jdText)
 
 	out := tailor.Render(res.Tailored, items, resumeHeader())
 	if len(res.Violations) > 0 {
@@ -65,17 +69,20 @@ func (r llmRunner) Prep(ctx context.Context, jdText string) (string, error) {
 	return out, nil
 }
 
-// setup is the shared front half: load stored items, build the client, and
-// analyze the pasted JD text. Mirrors analyzeAgainstItems, but takes JD text
-// rather than a file path.
-func (r llmRunner) setup(ctx context.Context, jdText string) ([]resume.Item, *jd.JD, *llm.Client, error) {
+// setup is the shared front half: load stored items, build the client, resolve
+// the JD (the web form accepts a pasted description or a URL), and analyze it.
+func (r llmRunner) setup(ctx context.Context, jdInput string) ([]resume.Item, *jd.JD, *llm.Client, error) {
 	items, err := loadItems("items.json")
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("could not load items.json — run `ai-resume-tailor decompose` first: %w", err)
+		return nil, nil, nil, fmt.Errorf("could not load items.json — run `jobtailor decompose` first: %w", err)
 	}
 	client, err := buildClient(r.log)
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	jdText, err := jobsource.NewResolver(client, r.log).Resolve(ctx, jdInput)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("resolve jd: %w", err)
 	}
 	analyzed, err := jd.NewAnalyzer(client, r.log).Analyze(ctx, jdText)
 	if err != nil {

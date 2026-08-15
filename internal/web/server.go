@@ -66,6 +66,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /generate", s.generatePage)
 	mux.HandleFunc("POST /generate", s.generateSubmit)
 	mux.HandleFunc("GET /jobs/{id}", s.jobPage)
+	mux.HandleFunc("GET /profile", s.profilePage)  // ← 추가
+	mux.HandleFunc("POST /profile", s.profileSave) // ← 추가
 	return mux
 }
 
@@ -94,6 +96,8 @@ type appView struct {
 	Role    string
 	Status  store.Status
 	Notes   string
+	JDText  string
+	JDTitle string
 	Applied string
 	Updated string
 }
@@ -215,6 +219,39 @@ func (s *Server) generateSubmit(w http.ResponseWriter, r *http.Request) {
 	// watch. The handler returns in milliseconds.
 	id := s.jobs.Submit(action, label(jd), fn)
 	http.Redirect(w, r, "/jobs/"+id, http.StatusSeeOther)
+}
+
+// --- profile (resume header) ---
+
+type profileData struct {
+	Profile store.Profile
+	Saved   bool
+}
+
+func (s *Server) profilePage(w http.ResponseWriter, r *http.Request) {
+	p, err := s.store.GetProfile()
+	if err != nil {
+		s.serverError(w, "load profile", err)
+		return
+	}
+	saved := r.URL.Query().Get("saved") == "1"
+	s.render(w, "profile.html", "profile", profileData{Profile: p, Saved: saved})
+}
+
+func (s *Server) profileSave(w http.ResponseWriter, r *http.Request) {
+	p := store.Profile{
+		Name:     strings.TrimSpace(r.FormValue("name")),
+		Email:    strings.TrimSpace(r.FormValue("email")),
+		Phone:    strings.TrimSpace(r.FormValue("phone")),
+		Location: strings.TrimSpace(r.FormValue("location")),
+		LinkedIn: strings.TrimSpace(r.FormValue("linkedin")),
+		GitHub:   strings.TrimSpace(r.FormValue("github")),
+	}
+	if err := s.store.SaveProfile(p); err != nil {
+		s.serverError(w, "save profile", err)
+		return
+	}
+	http.Redirect(w, r, "/profile?saved=1", http.StatusSeeOther)
 }
 
 func (s *Server) jobPage(w http.ResponseWriter, r *http.Request) {

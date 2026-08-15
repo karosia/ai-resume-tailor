@@ -51,14 +51,34 @@ CREATE TABLE IF NOT EXISTS applications (
     role       TEXT NOT NULL,
     status     TEXT NOT NULL,
     notes      TEXT NOT NULL DEFAULT '',
+    jd_text    TEXT NOT NULL DEFAULT '',
+    jd_title   TEXT NOT NULL DEFAULT '',
     applied_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS profile (
+    id        INTEGER PRIMARY KEY CHECK (id = 1), -- single-row table
+    name      TEXT NOT NULL DEFAULT '',
+    email     TEXT NOT NULL DEFAULT '',
+    phone     TEXT NOT NULL DEFAULT '',
+    location  TEXT NOT NULL DEFAULT '',
+    linkedin  TEXT NOT NULL DEFAULT '',
+    github    TEXT NOT NULL DEFAULT ''
 );`
 
 func (s *Store) migrate() error {
 	if _, err := s.db.Exec(schema); err != nil {
 		return fmt.Errorf("store: migrate: %w", err)
+	}
+	for _, col := range []string{
+		`ALTER TABLE applications ADD COLUMN jd_text TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE applications ADD COLUMN jd_title TEXT NOT NULL DEFAULT ''`,
+	} {
+		if _, err := s.db.Exec(col); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+			return fmt.Errorf("store: migrate columns: %w", err)
+		}
 	}
 	return nil
 }
@@ -191,4 +211,29 @@ func scanApplication(r rowScanner) (*Application, error) {
 		}
 	}
 	return &app, nil
+}
+
+// AddDraft creates a draft application that also carries the analyzed job
+// description. It's what tailor calls after building a resume.
+func (s *Store) AddDraft(company, role, jdText, jdTitle string) (*Application, error) {
+	company = strings.TrimSpace(company)
+	if company == "" {
+		return nil, fmt.Errorf("store: company is required")
+	}
+	role = strings.TrimSpace(role)
+
+	now := time.Now().UTC().Format(tsLayout)
+	res, err := s.db.Exec(
+		`INSERT INTO applications (company, role, status, notes, jd_text, jd_title, created_at, updated_at)
+		 VALUES (?, ?, ?, '', ?, ?, ?, ?)`,
+		company, role, string(StatusDraft), jdText, jdTitle, now, now,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: insert draft: %w", err)
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("store: last insert id: %w", err)
+	}
+	return s.Get(id)
 }

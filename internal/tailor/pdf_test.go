@@ -103,3 +103,38 @@ func TestGroupByCompany_GroupsAndOrders(t *testing.T) {
 		t.Fatalf("expected 1 Other section with 1 bullet, got %+v", g.Other)
 	}
 }
+
+func TestGroupByCompany_ExcludesEducation(t *testing.T) {
+	items := []resume.Item{
+		{ID: "exp-1", Type: resume.ItemExperience, Title: "Backend Engineer", Company: "Acme", StartDate: "2022", EndDate: "2025"},
+		{ID: "edu-1", Type: resume.ItemEducation, Title: "BSc", Company: "State University", StartDate: "2014", EndDate: "2018"},
+	}
+	tl := &Tailored{
+		Sections: []Section{{
+			Heading: "Experience",
+			Bullets: []Bullet{
+				{ItemID: "exp-1", Text: "Built services"},
+				{ItemID: "edu-1", Text: "BSc, State University"}, // must NOT become a company block
+			},
+		}},
+	}
+
+	g := groupByCompany(tl, items)
+
+	// Only Acme should be an experience group — the university must not appear.
+	if len(g.Experience) != 1 || g.Experience[0].Company != "Acme" {
+		t.Fatalf("education leaked into experience: %+v", g.Experience)
+	}
+	// The education bullet falls through to Other.
+	found := false
+	for _, o := range g.Other {
+		for _, b := range o.Bullets {
+			if b == "BSc, State University" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatal("education bullet should fall through to Other section")
+	}
+}

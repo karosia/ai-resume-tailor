@@ -37,6 +37,8 @@ type Application struct {
 	Role      string
 	Status    Status
 	Notes     string
+	JDText    string
+	JDTitle   string
 	AppliedAt *time.Time
 	CreatedAt time.Time
 	UpdatedAt time.Time

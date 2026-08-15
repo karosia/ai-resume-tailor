@@ -50,6 +50,16 @@
     td.id { font-family:var(--mono); color:var(--faint); font-size:13px; }
     .who { display:flex; flex-direction:column; gap:1px; }
     .who .company{font-weight:600} .who .role{color:var(--muted); font-size:13px;}
+    .jd-open { margin-top:6px; display:inline-block; cursor:pointer; font-family:var(--mono); font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:var(--s-applied); background:transparent; border:1px solid color-mix(in srgb, var(--s-applied) 30%, white); border-radius:6px; padding:3px 9px; }
+    .jd-open:hover { background:color-mix(in srgb, var(--s-applied) 8%, white); }
+    .jd-modal { width:min(680px, 92vw); max-height:82vh; border:1px solid var(--hairline); border-radius:14px; padding:0; background:var(--surface); color:var(--ink); box-shadow:0 24px 60px rgba(0,0,0,0.22); overflow:hidden; }
+    .jd-modal::backdrop { background:rgba(20,24,32,0.42); }
+    .jd-modal-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:18px 20px 12px; border-bottom:1px solid var(--hairline); position:sticky; top:0; background:var(--surface); }
+    .jd-modal-company { font-weight:650; font-size:16px; }
+    .jd-modal-role { color:var(--muted); font-size:13px; margin-top:2px; }
+    .jd-close { border:0; background:transparent; font-size:24px; line-height:1; color:var(--faint); cursor:pointer; padding:0 4px; }
+    .jd-close:hover { color:var(--ink); }
+    .jd-modal .jd-text { white-space:pre-wrap; font-family:var(--mono); font-size:12.5px; line-height:1.6; color:var(--ink); margin:0; padding:18px 20px; max-height:66vh; overflow-y:auto; background:#fbfcfd; }
     .status-form { display:flex; align-items:center; gap:8px; }
     .pill { font-family:var(--mono); font-size:11px; letter-spacing:0.06em; text-transform:uppercase; padding:4px 9px; border-radius:999px; color:var(--sc); background:color-mix(in srgb, var(--sc) 12%, white); border:1px solid color-mix(in srgb, var(--sc) 32%, white); white-space:nowrap; }
     select { font:inherit; font-size:13px; color:var(--muted); padding:5px 8px; border:1px solid var(--hairline); border-radius:7px; background:var(--surface); cursor:pointer; }
@@ -83,6 +93,14 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     .result { white-space:pre-wrap; font-family:var(--mono); font-size:13px; line-height:1.55; background:#fbfcfd; border:1px solid var(--hairline); border-radius:10px; padding:18px; overflow-x:auto; }
     .errbox { color:var(--s-rejected); background:color-mix(in srgb, var(--s-rejected) 8%, white); border:1px solid color-mix(in srgb, var(--s-rejected) 25%, white); border-radius:10px; padding:14px 16px; font-size:14px; }
+    /* profile form */
+    .profile-form { display:flex; flex-direction:column; gap:14px; }
+    .profile-form label { display:flex; flex-direction:column; gap:5px; font-size:12px; font-family:var(--mono); letter-spacing:0.04em; text-transform:uppercase; color:var(--faint); }
+    .profile-form input { padding:10px 12px; border:1px solid var(--hairline); border-radius:8px; background:#fbfcfd; color:var(--ink); font:inherit; font-size:14px; }
+    .profile-form .row { display:flex; gap:14px; }
+    .profile-form .row label { flex:1; }
+    .saved-note { display:inline-block; margin-bottom:14px; padding:6px 12px; border-radius:8px; font-size:13px; color:var(--s-offer); background:color-mix(in srgb, var(--s-offer) 12%, white); border:1px solid color-mix(in srgb, var(--s-offer) 30%, white); }
+    @media (max-width:560px){ .profile-form .row { flex-direction:column; } }
 
     @media (prefers-reduced-motion:no-preference){ .board tbody tr{transition:background 120ms ease;} }
     @media (max-width:560px){ .shell{padding:28px 16px 60px;} }
@@ -93,6 +111,7 @@
 <header class="masthead">
     <div class="brand"><span class="brand-mark">&#9670;</span><a class="brand-name" href="/">ai-resume-tailor</a></div>
     <nav class="tabs">
+        <a href="/profile"{{if eq .Active "profile"}} class="active"{{end}}>Profile</a>
         <a href="/"{{if eq .Active "pipeline"}} class="active"{{end}}>Pipeline</a>
         <a href="/generate"{{if eq .Active "generate"}} class="active"{{end}}>Generate</a>
     </nav>

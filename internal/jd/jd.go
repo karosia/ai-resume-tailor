@@ -19,6 +19,7 @@ import (
 // JSON the model is asked to return, so its output unmarshals straight in.
 type JD struct {
 	Title            string   `json:"title"`
+	Company          string   `json:"company"`
 	Seniority        string   `json:"seniority"`
 	RequiredSkills   []string `json:"required_skills"`
 	NiceToHave       []string `json:"nice_to_have"`
@@ -48,6 +49,7 @@ func NewAnalyzer(c completer, log *slog.Logger) *Analyzer {
 const analyzeSystemPrompt = `You are a precise job-description analyzer. Given the raw text of a job posting, extract its requirements into structured fields.
 
 Rules:
+- "company": the hiring company's name if the posting states it; otherwise "". Do not guess.
 - "required_skills": concrete skills/technologies the role clearly requires (e.g. "Go", "Kubernetes", "distributed systems").
 - "nice_to_have": skills mentioned as preferred, bonus, or a plus.
 - "keywords": additional ATS-relevant terms a resume should echo — tools, domains, methods, and role-specific nouns that appear in the posting.
@@ -58,7 +60,7 @@ Rules:
 - Return ONLY a JSON object. No prose, no markdown code fences.
 
 Schema:
-{"title":"...","seniority":"...","required_skills":["..."],"nice_to_have":["..."],"keywords":["..."],"responsibilities":["..."]}`
+{"title":"...","company":"...","seniority":"...","required_skills":["..."],"nice_to_have":["..."],"keywords":["..."],"responsibilities":["..."]}`
 
 // Analyze sends the JD text to the LLM and returns structured requirements.
 func (a *Analyzer) Analyze(ctx context.Context, jdText string) (*JD, error) {
@@ -97,6 +99,7 @@ func (a *Analyzer) Analyze(ctx context.Context, jdText string) (*JD, error) {
 // insensitively) from every list, so downstream matching isn't skewed by dupes.
 func (j *JD) normalize() {
 	j.Title = strings.TrimSpace(j.Title)
+	j.Company = strings.TrimSpace(j.Company)
 	j.Seniority = strings.ToLower(strings.TrimSpace(j.Seniority))
 	j.RequiredSkills = cleanTerms(j.RequiredSkills)
 	j.NiceToHave = cleanTerms(j.NiceToHave)

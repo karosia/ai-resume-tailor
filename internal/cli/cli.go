@@ -4,8 +4,8 @@
 package cli
 
 import (
+	"ai-resume-tailor/internal/jobsource"
 	"ai-resume-tailor/internal/tailor"
-	"ai-resume-tailor/jobsource"
 	"bufio"
 	"context"
 	"encoding/json"
@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"ai-resume-tailor/internal/jd"
 	"ai-resume-tailor/internal/llm"
@@ -219,13 +220,98 @@ func jdArgOrPrompt(args []string) (string, error) {
 	return promptJD()
 }
 
+// resumeHeader loads the candidate's contact facts from the profile stored in
+// the database (set via the web dashboard's Profile tab). These are facts about
+// the person that live outside the tailored items, so the model never sees or
+// invents them. A missing/empty profile yields an empty header, which the
+// renderers handle gracefully.
 func resumeHeader() tailor.Header {
-	return tailor.Header{
-		Name:     os.Getenv("RESUME_NAME"),
-		Email:    os.Getenv("RESUME_EMAIL"),
-		Phone:    os.Getenv("RESUME_PHONE"),
-		Location: os.Getenv("RESUME_LOCATION"),
-		LinkedIn: os.Getenv("RESUME_LINKEDIN"),
-		GitHub:   os.Getenv("RESUME_GITHUB"),
+	st, err := openStore()
+	if err != nil {
+		return tailor.Header{}
 	}
+	defer st.Close()
+
+	p, err := st.GetProfile()
+	if err != nil {
+		return tailor.Header{}
+	}
+	return tailor.Header{
+		Name:     p.Name,
+		Email:    p.Email,
+		Phone:    p.Phone,
+		Location: p.Location,
+		LinkedIn: p.LinkedIn,
+		GitHub:   p.GitHub,
+	}
+}
+
+// saveDraftApplication queues a tailored resume as a draft application in the
+// tracker, capturing the JD. When the JD didn't name a company, it falls back to
+// the role title (or "Untitled role") so the entry still appears and the user
+// can rename it on the dashboard. Best-effort: returns a short status note for
+// display, and never fails the caller.
+func saveDraftApplication(log *slog.Logger, analyzed *jd.JD, jdText string) string {
+	company := strings.TrimSpace(analyzed.Company)
+	if company == "" {
+		if t := strings.TrimSpace(analyzed.Title); t != "" {
+			company = t // fallback so the draft is still created (rename later)
+		} else {
+			company = "Untitled role"
+		}
+	}
+
+	st, err := openStore()
+	if err != nil {
+		log.Warn("could not open store to track draft", "error", err)
+		return ""
+	}
+	defer st.Close()
+
+	if _, err := st.AddDraft(company, analyzed.Title, jdText, analyzed.Title); err != nil {
+		log.Warn("could not save draft application", "error", err)
+		return ""
+	}
+	return fmt.Sprintf("Tracked as a draft application for %s.", company)
+}
+
+// resumeFileBase builds the output file base name (without extension) from the
+// candidate name, the company (when known), and today's date — e.g.
+// "Jayce_Park_Stripe_260814". Missing pieces are skipped; if nothing usable is
+// present it falls back to "tailored".
+func resumeFileBase(name, company string) string {
+	var parts []string
+	if s := fileToken(name); s != "" {
+		parts = append(parts, s)
+	}
+	if s := fileToken(company); s != "" {
+		parts = append(parts, s)
+	}
+	date := time.Now().Format("060102") // YYMMDD
+
+	if len(parts) == 0 {
+		return "tailored_" + date
+	}
+	parts = append(parts, date)
+	return strings.Join(parts, "_")
+}
+
+// fileToken turns free text into a safe file-name token: keep letters and
+// digits, turn runs of anything else into single underscores, trim underscores.
+func fileToken(s string) string {
+	var b strings.Builder
+	prevUnderscore := false
+	for _, r := range s {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9'):
+			b.WriteRune(r)
+			prevUnderscore = false
+		default:
+			if !prevUnderscore {
+				b.WriteByte('_')
+				prevUnderscore = true
+			}
+		}
+	}
+	return strings.Trim(b.String(), "_")
 }

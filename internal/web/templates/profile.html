@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JobTailor — Profile</title>
+  {{template "styles" .}}
+</head>
+<body>
+<div class="shell">
+  {{template "nav" .}}
+
+  <div class="panel">
+    <p class="lead">These details appear at the top of every tailored résumé. They're stored here — not taken from your résumé items — so nothing is ever invented.</p>
+
+    {{if .Data.Saved}}<div class="saved-note">Saved.</div>{{end}}
+
+    <form method="post" action="/profile" class="profile-form">
+      <label>Full name
+        <input name="name" value="{{.Data.Profile.Name}}" autocomplete="name" placeholder="J">
+      </label>
+      <div class="row">
+        <label>Email
+          <input name="email" value="{{.Data.Profile.Email}}" autocomplete="email" placeholder="you@example.com">
+        </label>
+        <label>Phone
+          <input name="phone" value="{{.Data.Profile.Phone}}" autocomplete="tel" placeholder="+1 (604) 555-0100">
+        </label>
+      </div>
+      <label>Location
+        <input name="location" value="{{.Data.Profile.Location}}" placeholder="Canada">
+      </label>
+      <div class="row">
+        <label>LinkedIn
+          <input name="linkedin" value="{{.Data.Profile.LinkedIn}}" placeholder="linkedin.com/in/you">
+        </label>
+        <label>GitHub
+          <input name="github" value="{{.Data.Profile.GitHub}}" placeholder="github.com/you">
+        </label>
+      </div>
+      <div class="actions">
+        <button type="submit" class="btn">Save profile</button>
+      </div>
+    </form>
+  </div>
+</div>
+</body>
+</html>

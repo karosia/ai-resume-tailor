@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>ai-resume-tailor — Pipeline</title>
+    <title>JobTailor — Pipeline</title>
     {{template "styles" .}}
 </head>
 <body>
@@ -30,7 +30,22 @@
             {{range .Data.Apps}}
             <tr data-status="{{.Status}}">
                 <td class="id">{{.ID}}</td>
-                <td><div class="who"><span class="company">{{.Company}}</span><span class="role">{{.Role}}</span></div></td>
+                <td>
+                    <div class="who"><span class="company">{{.Company}}</span><span class="role">{{.Role}}</span></div>
+                    {{if .JDText}}
+                    <button type="button" class="jd-open" data-jd="jd-{{.ID}}">View JD</button>
+                    <dialog id="jd-{{.ID}}" class="jd-modal">
+                        <div class="jd-modal-head">
+                            <div>
+                                <div class="jd-modal-company">{{.Company}}</div>
+                                {{if .JDTitle}}<div class="jd-modal-role">{{.JDTitle}}</div>{{end}}
+                            </div>
+                            <button type="button" class="jd-close" data-close="jd-{{.ID}}" aria-label="Close">&times;</button>
+                        </div>
+                        <pre class="jd-text">{{.JDText}}</pre>
+                    </dialog>
+                    {{end}}
+                </td>
                 <td>
                     {{$cur := .Status}}
                     <form method="post" action="/apps/{{.ID}}/status" class="status-form">
@@ -57,5 +72,26 @@
     <div class="empty">No applications yet. Add your first one above to start tracking.</div>
     {{end}}
 </div>
+
+<script>
+    // Minimal modal wiring using the native <dialog> element. Event delegation on
+    // the document keeps this to a few lines regardless of how many rows there are.
+    document.addEventListener("click", function (e) {
+        var open = e.target.closest("[data-jd]");
+        if (open) {
+            var dlg = document.getElementById(open.getAttribute("data-jd"));
+            if (dlg && typeof dlg.showModal === "function") dlg.showModal();
+            return;
+        }
+        var close = e.target.closest("[data-close]");
+        if (close) {
+            var d = document.getElementById(close.getAttribute("data-close"));
+            if (d) d.close();
+            return;
+        }
+        // Click on the backdrop (the dialog element itself, outside its content) closes it.
+        if (e.target.tagName === "DIALOG") e.target.close();
+    });
+</script>
 </body>
 </html>

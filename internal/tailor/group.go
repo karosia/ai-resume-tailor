@@ -92,9 +92,11 @@ func groupByCompany(t *Tailored, items []resume.Item) grouped {
 		var loose []string // bullets in this section with no company
 		for _, bl := range sec.Bullets {
 			it, ok := byID[bl.ItemID]
-			if !ok || it.Company == "" {
-				// Unknown item id, or an item with no company (skill/education/
-				// summary-style): keep it under the section heading.
+			// Only role-style items (experience/achievement/project) group by
+			// company. Education has a school in its Company field but is not a
+			// job, so it must not become an experience block; skills/education
+			// and unknown ids fall through to their original section.
+			if !ok || it.Company == "" || !isExperienceType(it.Type) {
 				loose = append(loose, bl.Text)
 				continue
 			}
@@ -136,6 +138,18 @@ func groupByCompany(t *Tailored, items []resume.Item) grouped {
 	})
 
 	return grouped{Experience: exp, Other: other}
+}
+
+// isExperienceType reports whether an item type belongs in the company-grouped
+// experience section. Education is deliberately excluded: a school in the
+// Company field is not an employer.
+func isExperienceType(t resume.ItemType) bool {
+	switch t {
+	case resume.ItemExperience, resume.ItemAchievement, resume.ItemProject:
+		return true
+	default:
+		return false
+	}
 }
 
 // roleFor picks the job title to show for a company header. An item of type

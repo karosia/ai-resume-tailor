@@ -121,7 +121,6 @@ func runMatch(log *slog.Logger, args []string) error {
 	fmt.Println()
 	return nil
 }
-
 func runTailor(log *slog.Logger, args []string) error {
 	jdArg, err := jdArgOrPrompt(args)
 	if err != nil {
@@ -143,23 +142,32 @@ func runTailor(log *slog.Logger, args []string) error {
 
 	header := resumeHeader()
 
+	// File names incorporate the company (when the JD names one) and today's
+	// date, matching the canonical resume naming. Falls back to a generic name.
+	base := resumeFileBase(header.Name, analyzed.Company)
+	pdfPath := base + ".pdf"
+	mdPath := base + ".md"
+
 	pdfBytes, err := tailor.RenderPDF(res.Tailored, items, header)
 	if err != nil {
 		return fmt.Errorf("render pdf: %w", err)
 	}
-	const pdfPath = "tailored.pdf"
 	if err := os.WriteFile(pdfPath, pdfBytes, 0o644); err != nil {
 		return fmt.Errorf("write pdf: %w", err)
 	}
 
 	md := tailor.Render(res.Tailored, items, header)
-
-	const outPath = "tailored.md"
-	if err := os.WriteFile(outPath, []byte(md), 0o644); err != nil {
+	if err := os.WriteFile(mdPath, []byte(md), 0o644); err != nil {
 		return fmt.Errorf("write tailored resume: %w", err)
 	}
 
-	fmt.Printf("\nTailored resume for: %s -> %s, %s\n\n", analyzed.Title, outPath, pdfPath)
+	// Queue this as a draft application in the tracker, capturing the JD, so the
+	// user can review and later advance it.
+	if note := saveDraftApplication(log, analyzed, jdArg); note != "" {
+		fmt.Println(note)
+	}
+
+	fmt.Printf("\nTailored resume for: %s -> %s, %s\n\n", analyzed.Title, mdPath, pdfPath)
 	fmt.Println(md)
 
 	if len(res.Violations) == 0 {
