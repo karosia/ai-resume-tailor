@@ -115,6 +115,7 @@ func toView(a store.Application) appView {
 	}
 	return appView{
 		ID: a.ID, Company: a.Company, Role: a.Role, Status: a.Status, Notes: a.Notes,
+		JDText: a.JDText, JDTitle: a.JDTitle,
 		Applied: applied,
 		Updated: a.UpdatedAt.Local().Format("2006-01-02 15:04"),
 	}

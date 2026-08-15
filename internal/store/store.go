@@ -108,14 +108,14 @@ func (s *Store) Add(company, role string) (*Application, error) {
 
 func (s *Store) Get(id int64) (*Application, error) {
 	row := s.db.QueryRow(
-		`SELECT id, company, role, status, notes, applied_at, created_at, updated_at
+		`SELECT id, company, role, status, notes, jd_text, jd_title, applied_at, created_at, updated_at
 		 FROM applications WHERE id = ?`, id)
 	return scanApplication(row)
 }
 
 func (s *Store) List() ([]Application, error) {
 	rows, err := s.db.Query(
-		`SELECT id, company, role, status, notes, applied_at, created_at, updated_at
+		`SELECT id, company, role, status, notes, jd_text, jd_title, applied_at, created_at, updated_at
 		 FROM applications ORDER BY updated_at DESC, id DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("store: query: %w", err)
@@ -190,7 +190,7 @@ func scanApplication(r rowScanner) (*Application, error) {
 		updatedAt string
 	)
 	err := r.Scan(&app.ID, &app.Company, &app.Role, &status, &app.Notes,
-		&appliedAt, &createdAt, &updatedAt)
+		&app.JDText, &app.JDTitle, &appliedAt, &createdAt, &updatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

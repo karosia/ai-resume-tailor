@@ -122,7 +122,7 @@ func loadItems(path string) ([]resume.Item, error) {
 func analyzeAgainstItems(ctx context.Context, log *slog.Logger, jdArg string) ([]resume.Item, *jd.JD, *llm.Client, error) {
 	items, err := loadItems("items.json")
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("could not load items.json — run `jobtailor decompose` first: %w", err)
+		return nil, nil, nil, fmt.Errorf("could not load items.json — run `ai-resume-tailor decompose` first: %w", err)
 	}
 	client, err := buildClient(log)
 	if err != nil {
