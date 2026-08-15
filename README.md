@@ -1,126 +1,151 @@
 # ai-resume-tailor
 
-A resume tailoring and job application tracking tool, written in Go.
+A local, single-binary tool that tailors your résumé to a specific job
+description and tracks your applications — with a CLI and a small web dashboard.
+It runs an LLM to rewrite your existing experience toward a posting, but never
+invents facts: every tailored bullet is verified against your source material,
+and contact details and company grouping come from your data, not the model.
 
-Point it at your resume and a job description, and it assembles a tailored
-resume from your **verified** experience — recombining, rephrasing, and
-re-emphasizing facts you've already recorded, without inventing metrics or
-claims. It also tracks where you've applied and helps you prepare for
-interviews.
+## What it does
 
-> **Status: early development.** The LLM provider layer (Milestone 1) is
-> complete and tested. See the [roadmap](#roadmap) for what exists today and
-> what's coming.
+- **Decompose** your résumé into structured, reusable items (experience,
+  achievements, skills, education, projects).
+- **Analyze** a job description (pasted text, a local file, or a URL) into
+  required skills, nice-to-haves, ATS keywords, and responsibilities.
+- **Tailor** your résumé to that posting — selecting and rephrasing your real
+  bullets, grouped by company, with a contact header — and export Markdown + PDF.
+- **Verify** that no figure or claim in the output is fabricated; anything that
+  can't be traced to a source item is flagged for your review.
+- **Prep** interview talking points grounded in items you actually have.
+- **Track** applications through a pipeline (draft → applied → interviewing →
+  offer → accepted), and review the saved JD for each one.
 
-## Why this exists
-
-General-purpose job trackers don't know your actual accomplishments or your
-standards, so auto-generated bullet points tend to inflate or invent. ai-resume-tailor
-is built around one hard constraint: the resume assembler may only work from
-facts that already exist in your stored resume items. Rewording and reordering
-are allowed; fabricating a number or an experience is not. That guardrail is the
-core design principle the rest of the project is built to enforce.
-
-## What's implemented today (Milestone 1)
-
-A provider-agnostic LLM client with automatic failover:
-
-- A single `Provider` interface — add a new backend by implementing two methods.
-- Ships with an **Anthropic** provider (primary) and an **OpenAI** provider
-  (fallback).
-- Ordered failover: providers are tried in priority order; the first success is
-  returned, and if every provider fails the errors are aggregated into one.
-- No third-party dependencies — standard library only.
-
-## Architecture
-
-The guiding rule: nothing outside `internal/llm` imports a specific provider.
-The rest of the application depends only on the `Provider` interface and the
-`Client`. Adding a provider is one new file plus one line of registration —
-no other code changes.
-
-```
-ai-resume-tailor/
-├── main.go                  # wires providers from env, runs a demo call
-└── internal/
-    └── llm/
-        ├── llm.go           # Provider interface + provider-agnostic types
-        ├── client.go        # ordered failover chain
-        ├── anthropic.go     # Anthropic Messages API provider
-        ├── openai.go        # OpenAI Chat Completions provider
-        └── client_test.go   # failover tests (no network required)
-```
-
-Each provider translates the shared, provider-agnostic `Request` into its own
-wire format, so per-provider quirks (for example, how a system prompt is passed)
-stay contained inside that provider's file and never leak into the rest of the
-app.
+Tailoring a résumé also captures the job description and queues the role as a
+**draft** application automatically, so your tracker stays in sync with your work.
 
 ## Requirements
 
-- Go 1.21 or newer (uses `log/slog`).
+- Go 1.22+
+- An API key for at least one provider (Anthropic and/or OpenAI), set in the
+  environment (see Configuration).
 
-## Getting started
+Everything else is pure Go — the PDF renderer, the SQLite driver, and the web
+server have no system dependencies, so `go build` produces one self-contained
+binary.
+
+## Install
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/karosia/ai-resume-tailor.git
 cd ai-resume-tailor
+go build -o ai-resume-tailor .
+```
 
-# Run the failover tests — no API keys required.
-go test ./...
+## Configuration
 
-# Make a real call.
+Set whichever provider keys you have. If both are present, the client fails over
+from the primary to the secondary on error.
+
+```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-export OPENAI_API_KEY=sk-...        # optional; enables fallback
-go run .
+export OPENAI_API_KEY=sk-...            # optional fallback
+
+# optional model overrides
+export ANTHROPIC_MODEL=claude-sonnet-5
+export OPENAI_MODEL=gpt-5.6-terra
 ```
 
-### Configuration
+Your name, contact details, and links are **not** environment variables — set
+them once in the web **Profile** tab and they're stored in the local database.
 
-Configuration is read from environment variables:
+## Quick start
 
-| Variable            | Required | Default            | Purpose                          |
-| ------------------- | -------- | ------------------ | -------------------------------- |
-| `ANTHROPIC_API_KEY` | yes\*    | —                  | Enables the Anthropic provider   |
-| `ANTHROPIC_MODEL`   | no       | `claude-sonnet-5`  | Override the Anthropic model     |
-| `OPENAI_API_KEY`    | no       | —                  | Enables the OpenAI fallback      |
-| `OPENAI_MODEL`      | no       | `gpt-4o`           | Override the OpenAI model         |
+```bash
+# 1. Turn your résumé into structured items (one time)
+./ai-resume-tailor decompose my_resume.pdf     # or a .txt file
 
-\* At least one provider key must be set. The primary/fallback order is
-determined by the order providers are registered in `main.go` (Anthropic first,
-OpenAI second).
+# 2. Set your header details
+./ai-resume-tailor serve                        # open http://127.0.0.1:8080/profile
 
-## Adding a provider
+# 3. Tailor to a posting — paste text, pass a file, or pass a URL
+./ai-resume-tailor tailor                       # then paste the JD, end with two blank lines
+./ai-resume-tailor tailor job.txt
+./ai-resume-tailor tailor https://boards.example.com/senior-go-engineer
 
-Implement the `Provider` interface in a new file under `internal/llm/`:
-
-```go
-type Provider interface {
-    Name() string
-    Complete(ctx context.Context, req Request) (*Response, error)
-}
+# → writes Jayce_Park_Company_YYMMDD.pdf and .md,
+#   and adds a draft application with the JD attached
 ```
 
-Then register it in `main.go`:
+Then open the dashboard (`./ai-resume-tailor serve`) to see the draft, change
+its status, and click **View JD** to read the saved posting.
 
-```go
-if url := os.Getenv("OLLAMA_URL"); url != "" {
-    providers = append(providers, llm.NewOllamaProvider(url, "llama3"))
-}
+## Commands
+
+| Command | Description |
+|---|---|
+| `ping` | Check that a provider key works. |
+| `decompose [resume.txt\|.pdf]` | Parse your résumé into `items.json`. |
+| `match [jd\|url]` | Show how your items score against a posting. |
+| `tailor [jd\|url]` | Build a tailored résumé (Markdown + PDF) and track a draft. |
+| `prep [jd\|url]` | Generate grounded interview talking points. |
+| `track "<company>" "<role>"` | Add an application manually. |
+| `apps` | List tracked applications. |
+| `status <id> <status>` | Update an application's status. |
+| `note <id> <text…>` | Attach a note to an application. |
+| `serve [addr]` | Run the web dashboard (default `:8080`). |
+
+For `match`, `tailor`, and `prep`: pass a URL or file path, or pass nothing and
+paste the JD (finish with two blank lines). LinkedIn and other JavaScript-heavy
+boards can't be fetched — paste those instead.
+
+Statuses: `draft`, `applied`, `interviewing`, `offer`, `accepted`, `rejected`,
+`withdrawn`.
+
+## The web dashboard
+
+`./ai-resume-tailor serve` gives you three tabs:
+
+- **Pipeline** — your applications as a board; change status inline, add notes,
+  and open the saved JD for any tailored role in a modal.
+- **Generate** — paste a JD (or URL) and run tailor/prep as a background job,
+  watching the result stream in.
+- **Profile** — your name, contact details, and links, used as the résumé header.
+
+## How "no fabrication" works
+
+The model only ever rewrites bullets that map back to a real item you provided.
+After assembly, a verification pass checks every number and claim against the
+source; unverifiable figures are reported rather than silently kept. Company
+names, dates, and your contact header are filled deterministically from your
+items and profile — the model doesn't get to invent them.
+
+## Project layout
+
+```
+ai-resume-tailor/
+├── main.go
+└── internal/
+    ├── cli/         command dispatch, CLI + web wiring
+    ├── llm/         provider clients (Anthropic, OpenAI) with failover
+    ├── jsonx/       tolerant JSON extraction from model output
+    ├── resume/      résumé items and decomposition
+    ├── jd/          job-description analysis
+    ├── jobsource/   resolve a JD from text, a file, or a URL
+    ├── tailor/      matching, assembly, company grouping, PDF/Markdown
+    ├── prep/        interview-prep generation
+    ├── jobs/        in-process background job manager
+    ├── store/       SQLite: applications, profile
+    └── web/         server, handlers, html/template views
 ```
 
-Nothing else needs to change. The failover `Client` and all downstream features
-work against the interface, not any concrete provider.
+## Data & privacy
 
-## Roadmap
-
-- [x] **M1** — LLM provider abstraction + ordered failover
-- [ ] **M2** — Resume decomposition into structured, reusable items
-- [ ] **M3** — JD analysis, item matching, and guardrailed tailored-resume generation
-- [ ] **M4** — Application tracking (status, dates, history) backed by SQLite
-- [ ] **M5** — Interview prep: expected questions + answer examples grounded in stored items
-- [ ] **M6** — Web UI to tie it together
+Everything stays on your machine. Your items, profile, applications, and saved
+JDs live in a local SQLite file (`ai-resume-tailor.db`); generated résumés are
+written to the working directory. Nothing is uploaded anywhere except the LLM
+provider calls you trigger. Keep `ai-resume-tailor.db`, `items.json`, generated
+résumé files, and your `.env` out of version control (see `.gitignore`).
 
 ## License
 
-Personal project. Choose and add a license (e.g. MIT) before sharing or reuse.
+MIT
