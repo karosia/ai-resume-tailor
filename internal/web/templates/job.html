@@ -1,11 +1,11 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ai-resume-tailor — {{.Data.Kind}}</title>
-{{if eq .Data.Status "running"}}<meta http-equiv="refresh" content="2">{{end}}
-{{template "styles" .}}
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JobTailor — {{.Data.Kind}}</title>
+  {{if eq .Data.Status "running"}}<meta http-equiv="refresh" content="2">{{end}}
+  {{template "styles" .}}
 </head>
 <body>
 <div class="shell">
@@ -19,11 +19,16 @@
   </div>
 
   {{if eq .Data.Status "running"}}
-    <div class="panel"><p class="lead" style="margin:0">Working&hellip; this page refreshes automatically. A tailored résumé or interview prep usually takes under two minutes.</p></div>
+  <div class="panel"><p class="lead" style="margin:0">Working&hellip; this page refreshes automatically. A tailored résumé or interview prep usually takes under two minutes.</p></div>
   {{else if eq .Data.Status "failed"}}
-    <div class="errbox">{{.Data.Err}}</div>
+  <div class="errbox">{{.Data.Err}}</div>
   {{else}}
-    <div class="result">{{.Data.Result}}</div>
+  {{if .Data.PDF}}
+  <div class="actions" style="margin-bottom:16px">
+    <a class="btn" href="/jobs/{{.Data.ID}}/download">Download PDF</a>
+  </div>
+  {{end}}
+  <div class="result">{{.Data.Result}}</div>
   {{end}}
 
   <p style="margin-top:18px"><a href="/generate">&larr; Back to generate</a></p>

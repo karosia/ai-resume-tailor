@@ -30,6 +30,8 @@ type Job struct {
 	Label   string // short human label, e.g. a snippet of the JD
 	Status  Status
 	Result  string // rendered output, when done
+	PDF     []byte // tailor only: PDF bytes for download, when done
+	PDFName string // tailor only: suggested download file name
 	Err     string // error message, when failed
 	Created time.Time
 	Ended   time.Time
@@ -48,9 +50,18 @@ func NewManager(timeout time.Duration) *Manager {
 	return &Manager{jobs: make(map[string]*Job), timeout: timeout}
 }
 
+// JobResult is what a job's work function returns: the rendered text plus, for
+// tailor jobs, the PDF bytes and file name to offer for download. Prep jobs
+// leave PDF/PDFName empty.
+type JobResult struct {
+	Text    string
+	PDF     []byte
+	PDFName string
+}
+
 // Submit starts fn in the background and returns the new job's id immediately.
 // fn receives a context that is cancelled when the manager's timeout elapses.
-func (m *Manager) Submit(kind, label string, fn func(ctx context.Context) (string, error)) string {
+func (m *Manager) Submit(kind, label string, fn func(ctx context.Context) (JobResult, error)) string {
 	job := &Job{
 		ID:      newID(),
 		Kind:    kind,
@@ -67,7 +78,7 @@ func (m *Manager) Submit(kind, label string, fn func(ctx context.Context) (strin
 	return job.ID
 }
 
-func (m *Manager) run(job *Job, fn func(ctx context.Context) (string, error)) {
+func (m *Manager) run(job *Job, fn func(ctx context.Context) (JobResult, error)) {
 	ctx, cancel := context.WithTimeout(context.Background(), m.timeout)
 	defer cancel()
 
@@ -82,7 +93,9 @@ func (m *Manager) run(job *Job, fn func(ctx context.Context) (string, error)) {
 		return
 	}
 	job.Status = StatusDone
-	job.Result = result
+	job.Result = result.Text
+	job.PDF = result.PDF
+	job.PDFName = result.PDFName
 }
 
 // Get returns a copy of the job with the given id. Copying under the lock means

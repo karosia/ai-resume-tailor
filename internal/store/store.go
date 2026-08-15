@@ -7,19 +7,28 @@ import (
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // ← 네 로컬은 이거 (샌드박스는 go-sqlite3)
 )
 
-const driverName = "sqlite"
+// driverName is the name the SQLite driver registers with database/sql.
+const driverName = "sqlite" // ← 네 로컬은 "sqlite" (샌드박스는 "sqlite3")
 
+// tsLayout is how timestamps are stored: RFC3339 text. Storing times as explicit
+// TEXT (rather than relying on driver-specific datetime handling) keeps behavior
+// identical across drivers and makes the DB easy to inspect by hand.
 const tsLayout = time.RFC3339Nano
 
+// ErrNotFound is returned when an application id doesn't exist.
 var ErrNotFound = errors.New("store: application not found")
 
+// Store is a handle to the applications database.
 type Store struct {
 	db *sql.DB
 }
 
+// Open opens (creating if needed) the SQLite database at path and ensures the
+// schema exists. Pass ":memory:" for an ephemeral in-memory database (used in
+// tests).
 func Open(path string) (*Store, error) {
 	db, err := sql.Open(driverName, path)
 	if err != nil {
@@ -42,6 +51,7 @@ func Open(path string) (*Store, error) {
 	return s, nil
 }
 
+// Close releases the database handle.
 func (s *Store) Close() error { return s.db.Close() }
 
 const schema = `
@@ -72,6 +82,10 @@ func (s *Store) migrate() error {
 	if _, err := s.db.Exec(schema); err != nil {
 		return fmt.Errorf("store: migrate: %w", err)
 	}
+	// Add columns that may be missing from an older database. CREATE TABLE
+	// IF NOT EXISTS won't add columns to a table that already exists, so we
+	// patch them in explicitly and ignore the "duplicate column" error that
+	// means the column is already there.
 	for _, col := range []string{
 		`ALTER TABLE applications ADD COLUMN jd_text TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE applications ADD COLUMN jd_title TEXT NOT NULL DEFAULT ''`,
@@ -83,6 +97,34 @@ func (s *Store) migrate() error {
 	return nil
 }
 
+// AddDraft creates a draft application that also carries the analyzed job
+// description. It's what `tailor` calls after building a resume, so the JD is
+// captured and the application is queued in the tracker for the user to act on.
+// role or jdTitle may be empty; company is required.
+func (s *Store) AddDraft(company, role, jdText, jdTitle string) (*Application, error) {
+	company = strings.TrimSpace(company)
+	if company == "" {
+		return nil, fmt.Errorf("store: company is required")
+	}
+	role = strings.TrimSpace(role)
+
+	now := time.Now().UTC().Format(tsLayout)
+	res, err := s.db.Exec(
+		`INSERT INTO applications (company, role, status, notes, jd_text, jd_title, created_at, updated_at)
+		 VALUES (?, ?, ?, '', ?, ?, ?, ?)`,
+		company, role, string(StatusDraft), jdText, jdTitle, now, now,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: insert draft: %w", err)
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("store: last insert id: %w", err)
+	}
+	return s.Get(id)
+}
+
+// Add inserts a new application in the "draft" state and returns it.
 func (s *Store) Add(company, role string) (*Application, error) {
 	company = strings.TrimSpace(company)
 	role = strings.TrimSpace(role)
@@ -106,6 +148,7 @@ func (s *Store) Add(company, role string) (*Application, error) {
 	return s.Get(id)
 }
 
+// Get returns one application by id, or ErrNotFound.
 func (s *Store) Get(id int64) (*Application, error) {
 	row := s.db.QueryRow(
 		`SELECT id, company, role, status, notes, jd_text, jd_title, applied_at, created_at, updated_at
@@ -113,6 +156,7 @@ func (s *Store) Get(id int64) (*Application, error) {
 	return scanApplication(row)
 }
 
+// List returns all applications, most recently updated first.
 func (s *Store) List() ([]Application, error) {
 	rows, err := s.db.Query(
 		`SELECT id, company, role, status, notes, jd_text, jd_title, applied_at, created_at, updated_at
@@ -133,6 +177,8 @@ func (s *Store) List() ([]Application, error) {
 	return out, rows.Err()
 }
 
+// SetStatus updates an application's status. The first time it becomes
+// "applied", applied_at is stamped with the current time.
 func (s *Store) SetStatus(id int64, status Status) error {
 	if !status.Valid() {
 		return fmt.Errorf("store: invalid status %q", status)
@@ -156,6 +202,7 @@ func (s *Store) SetStatus(id int64, status Status) error {
 	return affected(res)
 }
 
+// SetNotes replaces an application's notes.
 func (s *Store) SetNotes(id int64, notes string) error {
 	res, err := s.db.Exec(
 		`UPDATE applications SET notes = ?, updated_at = ? WHERE id = ?`,
@@ -166,6 +213,18 @@ func (s *Store) SetNotes(id int64, notes string) error {
 	return affected(res)
 }
 
+// Delete removes an application by id, or returns ErrNotFound if it doesn't
+// exist. This is permanent — the row and its stored JD are gone.
+func (s *Store) Delete(id int64) error {
+	res, err := s.db.Exec(`DELETE FROM applications WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("store: delete application: %w", err)
+	}
+	return affected(res)
+}
+
+// affected turns "0 rows changed" into ErrNotFound, so callers can tell a
+// missing id apart from a successful update.
 func affected(res sql.Result) error {
 	n, err := res.RowsAffected()
 	if err != nil {
@@ -177,6 +236,8 @@ func affected(res sql.Result) error {
 	return nil
 }
 
+// rowScanner is satisfied by both *sql.Row and *sql.Rows, so scanApplication
+// works for single-row Get and multi-row List alike.
 type rowScanner interface {
 	Scan(dest ...any) error
 }
@@ -211,29 +272,4 @@ func scanApplication(r rowScanner) (*Application, error) {
 		}
 	}
 	return &app, nil
-}
-
-// AddDraft creates a draft application that also carries the analyzed job
-// description. It's what tailor calls after building a resume.
-func (s *Store) AddDraft(company, role, jdText, jdTitle string) (*Application, error) {
-	company = strings.TrimSpace(company)
-	if company == "" {
-		return nil, fmt.Errorf("store: company is required")
-	}
-	role = strings.TrimSpace(role)
-
-	now := time.Now().UTC().Format(tsLayout)
-	res, err := s.db.Exec(
-		`INSERT INTO applications (company, role, status, notes, jd_text, jd_title, created_at, updated_at)
-		 VALUES (?, ?, ?, '', ?, ?, ?, ?)`,
-		company, role, string(StatusDraft), jdText, jdTitle, now, now,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("store: insert draft: %w", err)
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return nil, fmt.Errorf("store: last insert id: %w", err)
-	}
-	return s.Get(id)
 }

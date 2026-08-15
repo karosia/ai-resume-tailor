@@ -19,8 +19,10 @@ type fakeRunner struct {
 	result string
 }
 
-func (f fakeRunner) Tailor(ctx context.Context, jd string) (string, error) { return f.result, nil }
-func (f fakeRunner) Prep(ctx context.Context, jd string) (string, error)   { return f.result, nil }
+func (f fakeRunner) Tailor(ctx context.Context, jd string) (*TailorResult, error) {
+	return &TailorResult{Text: f.result}, nil
+}
+func (f fakeRunner) Prep(ctx context.Context, jd string) (string, error) { return f.result, nil }
 
 func newTestServer(t *testing.T) (*Server, http.Handler) {
 	t.Helper()
@@ -127,6 +129,8 @@ func TestSetStatus_BadIDRejected(t *testing.T) {
 	}
 }
 
+func itoa(n int64) string { return strconv.FormatInt(n, 10) }
+
 func TestGeneratePage_Renders(t *testing.T) {
 	_, h := newTestServer(t)
 	rr := httptest.NewRecorder()
@@ -194,5 +198,3 @@ func TestJobPage_UnknownIDNotFound(t *testing.T) {
 		t.Fatalf("expected 404, got %d", rr.Code)
 	}
 }
-
-func itoa(n int64) string { return strconv.FormatInt(n, 10) }

@@ -24,11 +24,19 @@ import (
 //go:embed templates/*.html
 var templatesFS embed.FS
 
+// TailorResult is what a tailor run produces for the web: the rendered text to
+// show on the job page, plus the PDF bytes and file name for download.
+type TailorResult struct {
+	Text    string
+	PDF     []byte
+	PDFName string
+}
+
 // Runner executes the slow, LLM-backed operations. The web package depends only
 // on this interface, so it stays decoupled from the llm/tailor/prep packages;
 // the cli wires up the real implementation.
 type Runner interface {
-	Tailor(ctx context.Context, jdText string) (string, error)
+	Tailor(ctx context.Context, jdText string) (*TailorResult, error)
 	Prep(ctx context.Context, jdText string) (string, error)
 }
 
@@ -63,11 +71,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /apps", s.add)
 	mux.HandleFunc("POST /apps/{id}/status", s.setStatus)
 	mux.HandleFunc("POST /apps/{id}/note", s.setNote)
+	mux.HandleFunc("POST /apps/{id}/delete", s.deleteApp)
 	mux.HandleFunc("GET /generate", s.generatePage)
 	mux.HandleFunc("POST /generate", s.generateSubmit)
 	mux.HandleFunc("GET /jobs/{id}", s.jobPage)
-	mux.HandleFunc("GET /profile", s.profilePage)  // ← 추가
-	mux.HandleFunc("POST /profile", s.profileSave) // ← 추가
+	mux.HandleFunc("GET /jobs/{id}/download", s.jobDownload)
+	mux.HandleFunc("GET /profile", s.profilePage)
+	mux.HandleFunc("POST /profile", s.profileSave)
 	return mux
 }
 
@@ -88,7 +98,7 @@ func (s *Server) render(w http.ResponseWriter, name, active string, data any) {
 	buf.WriteTo(w)
 }
 
-// --- tracker (unchanged behavior) ---
+// --- tracker ---
 
 type appView struct {
 	ID      int64
@@ -187,6 +197,22 @@ func (s *Server) setNote(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+func (s *Server) deleteApp(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.pathID(w, r)
+	if !ok {
+		return
+	}
+	if err := s.store.Delete(id); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		s.serverError(w, "delete application", err)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
 // --- generate (background jobs) ---
 
 type generateData struct {
@@ -205,12 +231,21 @@ func (s *Server) generateSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var fn func(ctx context.Context) (string, error)
+	var fn func(ctx context.Context) (jobs.JobResult, error)
 	switch action {
 	case "tailor":
-		fn = func(ctx context.Context) (string, error) { return s.runner.Tailor(ctx, jd) }
+		fn = func(ctx context.Context) (jobs.JobResult, error) {
+			res, err := s.runner.Tailor(ctx, jd)
+			if err != nil {
+				return jobs.JobResult{}, err
+			}
+			return jobs.JobResult{Text: res.Text, PDF: res.PDF, PDFName: res.PDFName}, nil
+		}
 	case "prep":
-		fn = func(ctx context.Context) (string, error) { return s.runner.Prep(ctx, jd) }
+		fn = func(ctx context.Context) (jobs.JobResult, error) {
+			text, err := s.runner.Prep(ctx, jd)
+			return jobs.JobResult{Text: text}, err
+		}
 	default:
 		http.Error(w, "unknown action", http.StatusBadRequest)
 		return
@@ -262,6 +297,22 @@ func (s *Server) jobPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.render(w, "job.html", "generate", job)
+}
+
+// jobDownload serves the PDF produced by a finished tailor job.
+func (s *Server) jobDownload(w http.ResponseWriter, r *http.Request) {
+	job, ok := s.jobs.Get(r.PathValue("id"))
+	if !ok || len(job.PDF) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	name := job.PDFName
+	if name == "" {
+		name = "resume.pdf"
+	}
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name))
+	w.Write(job.PDF)
 }
 
 // label is a short, single-line summary of a JD for the jobs list.

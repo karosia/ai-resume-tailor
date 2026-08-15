@@ -27,8 +27,8 @@ func waitDone(t *testing.T, m *Manager, id string) Job {
 
 func TestManager_JobSucceeds(t *testing.T) {
 	m := NewManager(2 * time.Second)
-	id := m.Submit("test", "label", func(ctx context.Context) (string, error) {
-		return "the result", nil
+	id := m.Submit("test", "label", func(ctx context.Context) (JobResult, error) {
+		return JobResult{Text: "the result"}, nil
 	})
 
 	j := waitDone(t, m, id)
@@ -45,8 +45,8 @@ func TestManager_JobSucceeds(t *testing.T) {
 
 func TestManager_JobFails(t *testing.T) {
 	m := NewManager(2 * time.Second)
-	id := m.Submit("test", "label", func(ctx context.Context) (string, error) {
-		return "", errors.New("boom")
+	id := m.Submit("test", "label", func(ctx context.Context) (JobResult, error) {
+		return JobResult{}, errors.New("boom")
 	})
 
 	j := waitDone(t, m, id)
@@ -60,9 +60,9 @@ func TestManager_JobFails(t *testing.T) {
 
 func TestManager_Timeout(t *testing.T) {
 	m := NewManager(30 * time.Millisecond)
-	id := m.Submit("test", "label", func(ctx context.Context) (string, error) {
+	id := m.Submit("test", "label", func(ctx context.Context) (JobResult, error) {
 		<-ctx.Done() // block until the manager's timeout cancels us
-		return "", ctx.Err()
+		return JobResult{}, ctx.Err()
 	})
 
 	j := waitDone(t, m, id)
@@ -80,9 +80,9 @@ func TestManager_GetMissing(t *testing.T) {
 
 func TestManager_ListNewestFirst(t *testing.T) {
 	m := NewManager(time.Second)
-	id1 := m.Submit("a", "1", func(ctx context.Context) (string, error) { return "x", nil })
+	id1 := m.Submit("a", "1", func(ctx context.Context) (JobResult, error) { return JobResult{Text: "x"}, nil })
 	time.Sleep(5 * time.Millisecond)
-	id2 := m.Submit("b", "2", func(ctx context.Context) (string, error) { return "y", nil })
+	id2 := m.Submit("b", "2", func(ctx context.Context) (JobResult, error) { return JobResult{Text: "y"}, nil })
 
 	waitDone(t, m, id1)
 	waitDone(t, m, id2)

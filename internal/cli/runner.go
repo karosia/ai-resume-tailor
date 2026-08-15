@@ -12,6 +12,7 @@ import (
 	"ai-resume-tailor/internal/prep"
 	"ai-resume-tailor/internal/resume"
 	"ai-resume-tailor/internal/tailor"
+	"ai-resume-tailor/internal/web"
 )
 
 // llmRunner implements web.Runner. It performs the same steps the `tailor` and
@@ -22,20 +23,21 @@ type llmRunner struct {
 	log *slog.Logger
 }
 
-func (r llmRunner) Tailor(ctx context.Context, jdText string) (string, error) {
+func (r llmRunner) Tailor(ctx context.Context, jdText string) (*web.TailorResult, error) {
 	items, analyzed, client, err := r.setup(ctx, jdText)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	res, err := tailor.NewAssembler(client, r.log).Assemble(ctx, items, analyzed)
 	if err != nil {
-		return "", fmt.Errorf("assemble: %w", err)
+		return nil, fmt.Errorf("assemble: %w", err)
 	}
 
 	// Track this as a draft application, capturing the JD text, just like the CLI.
 	saveDraftApplication(r.log, analyzed, jdText)
 
-	out := tailor.Render(res.Tailored, items, resumeHeader())
+	header := resumeHeader()
+	out := tailor.Render(res.Tailored, items, header)
 	if len(res.Violations) > 0 {
 		out += "\n\n----------\nVERIFICATION — " + strconv.Itoa(len(res.Violations)) + " issue(s) need your review:\n"
 		for _, v := range res.Violations {
@@ -44,7 +46,16 @@ func (r llmRunner) Tailor(ctx context.Context, jdText string) (string, error) {
 	} else {
 		out += "\n\n----------\nVerification: PASSED — no fabricated figures detected."
 	}
-	return out, nil
+
+	// Render the PDF too, so the web job page can offer it for download.
+	result := &web.TailorResult{Text: out}
+	if pdf, err := tailor.RenderPDF(res.Tailored, items, header); err != nil {
+		r.log.Warn("could not render pdf for download", "error", err)
+	} else {
+		result.PDF = pdf
+		result.PDFName = resumeFileBase(header.Name, analyzed.Company) + ".pdf"
+	}
+	return result, nil
 }
 
 func (r llmRunner) Prep(ctx context.Context, jdText string) (string, error) {
