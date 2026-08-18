@@ -20,6 +20,10 @@ import (
 	"ai-resume-tailor/internal/llm"
 	"ai-resume-tailor/internal/resume"
 	"ai-resume-tailor/internal/store"
+
+	aitracecause "github.com/karosia/ai-trace-cause"
+	oteltelemetry "github.com/karosia/ai-trace-cause/telemetry/otel"
+	"go.opentelemetry.io/otel"
 )
 
 // UsageError signals a bad invocation (missing or malformed arguments). main
@@ -37,10 +41,12 @@ func usagef(format string, a ...any) error {
 func Run(args []string) error {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
+	shutdown := setupOTel(log)
+	defer shutdown(context.Background())
+
 	if len(args) < 1 {
 		return &UsageError{Msg: usageText()}
 	}
-
 	switch args[0] {
 	case "ping":
 		return runPing(log)
@@ -314,4 +320,52 @@ func fileToken(s string) string {
 		}
 	}
 	return strings.Trim(b.String(), "_")
+}
+
+// explainTailorCausality builds a causal graph for a finished tailor run and
+// returns human-readable explanations for the actions the caller cares about.
+// It's best-effort: tracing is an observability aid, so a failure here logs and
+// returns empty rather than failing the tailor command. The graph is in-memory
+// and lives only for this call.
+//
+// When OpenTelemetry is enabled, the whole recording runs inside a span, and the
+// ai-trace-cause otel hook stamps every recorded entity with that span's trace
+// and span IDs — correlating "why" (the causal graph) with "how" (the OTel trace).
+func explainTailorCausality(
+	ctx context.Context,
+	log *slog.Logger,
+	t *tailor.Tailored,
+	items []resume.Item,
+	analyzed *jd.JD,
+) []string {
+	// Wrap the recording in an OpenTelemetry span so the causal entities can be
+	// correlated with it. When OTel is disabled this span is a cheap no-op.
+	ctx, span := otel.Tracer("ai-resume-tailor").Start(ctx, "tailor.causal_trace")
+	defer span.End()
+
+	tr, err := aitracecause.New(
+		aitracecause.WithMemoryStore(),
+		aitracecause.WithTelemetryHook(oteltelemetry.New()),
+	)
+	if err != nil {
+		log.Warn("could not start causal trace", "error", err)
+		return nil
+	}
+	res, err := tailor.RecordCausalTrace(ctx, tr, t, items, analyzed)
+	if err != nil {
+		log.Warn("could not record causal trace", "error", err)
+		return nil
+	}
+
+	// Explain the flagged actions first — those are the ones a user most needs
+	// the "why" for.
+	var out []string
+	for itemID, actionIDs := range res.Violations {
+		for _, aid := range actionIDs {
+			if s, err := tr.Explain(ctx, aid, 8); err == nil {
+				out = append(out, fmt.Sprintf("[%s] %s", itemID, s))
+			}
+		}
+	}
+	return out
 }

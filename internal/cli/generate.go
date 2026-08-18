@@ -178,6 +178,15 @@ func runTailor(log *slog.Logger, args []string) error {
 			fmt.Printf("  - [%s] %s\n    in: %q\n", v.ItemID, v.Reason, v.Text)
 		}
 		fmt.Println("\nThese figures could not be traced to your source items. Fix or remove them before using this resume.")
+
+		// Causal trace: explain *why* each flagged bullet was recorded as
+		// unverifiable, following the Source→…→Action chain.
+		if explanations := explainTailorCausality(ctx, log, res.Tailored, items, analyzed); len(explanations) > 0 {
+			fmt.Println("\nWhy these were flagged (causal trace):")
+			for _, e := range explanations {
+				fmt.Printf("  - %s\n", e)
+			}
+		}
 	}
 	return nil
 }
