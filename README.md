@@ -5,7 +5,8 @@ description and tracks your applications — with a CLI and a small web dashboar
 It runs an LLM to rewrite your existing experience toward a posting, but never
 invents facts: every tailored bullet is verified against your source material,
 and contact details, company grouping, and dates come from your data, not the
-model.
+model. It can also record *why* each line ended up in the résumé as a causal
+graph, so "why is this here?" has a traceable answer.
 
 ## Why
 
@@ -27,6 +28,9 @@ in one place.
   and PDF.
 - **Verify** that no figure or claim in the output is fabricated. Anything that
   can't be traced to a source item is flagged for your review.
+- **Explain** why each flagged bullet was recorded as unverifiable, following a
+  causal chain from the résumé item through the JD match to the decision and the
+  action taken.
 - **Prep** interview talking points grounded in items you actually have.
 - **Track** applications through a pipeline (draft → applied → interviewing →
   offer → accepted), review the saved JD for each, and delete ones you don't
@@ -38,7 +42,7 @@ Tailoring a résumé also captures the job description and files the role as a
 ## Requirements
 
 - Go 1.22 or newer
-- An API key for at least one provider (Anthropic and/or OpenAI)
+- An API key for at least one provider (Anthropic, OpenAI, and/or Gemini)
 
 Everything else is pure Go — the PDF renderer, the SQLite driver, and the web
 server have no system dependencies, so `go build` produces one self-contained
@@ -54,16 +58,21 @@ go build -o ai-resume-tailor .
 
 ## Configuration
 
-Set whichever provider keys you have. If both are present, the client fails over
-from the primary to the secondary on error.
+Set whichever provider keys you have. If more than one is present, the client
+fails over from the primary to the next on error.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 export OPENAI_API_KEY=sk-...            # optional fallback
+export GEMINI_API_KEY=...               # optional fallback
 
 # optional model overrides
 export ANTHROPIC_MODEL=claude-sonnet-5
 export OPENAI_MODEL=gpt-5.6-terra
+export GEMINI_MODEL=gemini-2.5-flash
+
+# optional: print OpenTelemetry spans for tailor runs to stdout
+export OTEL_ENABLED=1
 ```
 
 Your name, contact details, and links are **not** environment variables — set
@@ -132,19 +141,49 @@ names, dates, and your contact header are filled deterministically from your
 items and profile — the model doesn't get to invent them, and education is never
 misfiled as work experience.
 
+## Causal tracing
+
+Beyond flagging unverifiable figures, `tailor` can record the *reasoning* behind
+the résumé as a causal graph, using
+[ai-trace-cause](https://github.com/karosia/ai-trace-cause). Each bullet is
+traced along a five-step chain:
+
+```
+Source        the résumé item the bullet came from
+  │ PRODUCED
+Observation   the JD requirement it matched
+  │ SUPPORTS
+Fact          that the item covers that requirement (confidence = match score)
+  │ BASIS_OF
+Decision      to include the bullet — or to flag it as unverifiable
+  │ CAUSED
+Action        placing it in a section, or recording the violation
+```
+
+When verification flags a figure, the tool walks this chain backward and prints
+a plain-English explanation of why it was flagged — from the action, through the
+decision and fact, back to the source item. Confidence values come from the
+real match scores, not from the model.
+
+Setting `OTEL_ENABLED=1` wraps each tailor run in an OpenTelemetry span and
+correlates every recorded entity with that span's trace and span IDs, so the
+"why" (the causal graph) lines up with the "how" (operational tracing). Spans
+are printed to stdout; the tool configures the tracer but never sends data
+anywhere on its own.
+
 ## Project layout
 
 ```
 ai-resume-tailor/
 ├── main.go
 └── internal/
-    ├── cli/         command dispatch, CLI + web wiring
-    ├── llm/         provider clients (Anthropic, OpenAI) with failover
+    ├── cli/         command dispatch, CLI + web wiring, causal-trace + OTel setup
+    ├── llm/         provider clients (Anthropic, OpenAI, Gemini) with failover
     ├── jsonx/       tolerant JSON extraction from model output
     ├── resume/      résumé items and decomposition
     ├── jd/          job-description analysis
     ├── jobsource/   resolve a JD from text, a file, or a URL
-    ├── tailor/      matching, assembly, company grouping, PDF/Markdown
+    ├── tailor/      matching, assembly, company grouping, PDF/Markdown, causal trace
     ├── prep/        interview-prep generation
     ├── jobs/        in-process background job manager
     ├── store/       SQLite: applications, profile
@@ -155,9 +194,10 @@ ai-resume-tailor/
 
 Everything stays on your machine. Your items, profile, applications, and saved
 JDs live in a local SQLite file (`ai-resume-tailor.db`); generated résumés are
-written to the working directory. Nothing is uploaded anywhere except the LLM
-provider calls you trigger. Keep `ai-resume-tailor.db`, `items.json`, generated
-résumé files, and your `.env` out of version control (see `.gitignore`).
+written to the working directory. The causal graph is in-memory and lives only
+for a single tailor run. Nothing is uploaded anywhere except the LLM provider
+calls you trigger. Keep `ai-resume-tailor.db`, `items.json`, generated résumé
+files, and your `.env` out of version control (see `.gitignore`).
 
 ## Troubleshooting
 
@@ -170,6 +210,7 @@ résumé files, and your `.env` out of version control (see `.gitignore`).
   bot-protected boards can't be fetched. Paste the description instead.
 - **A tailored figure is flagged.** That number couldn't be traced to a source
   item. Fix or remove it before using the résumé — the check is doing its job.
+  Run with `OTEL_ENABLED=1` to see the full causal chain behind the flag.
 
 ## License
 
